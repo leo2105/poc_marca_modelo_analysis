@@ -1,0 +1,73 @@
+{
+  "schema_version": "1.0",
+  "event_id": "nb15k-2026",
+  "run_id": "val-20260318T1540-a91c",
+  "source_run_id": "20260316T0210-m3a7f",
+  "generated_at": "2026-03-18T15:40:12Z",
+  "catalog_version": "catalog-2026.03",
+  "published": true,
+  "summary": {
+    "total": 4,
+    "pending": 0,
+    "approved": 1,
+    "corrected": 2,
+    "rejected": 0,
+    "discarded": 1,
+    "included_in_report": 3
+  },
+  "catalog_additions": [
+    {
+      "type": "model",
+      "brand": "Adidas",
+      "model": "Adizero Prime X 3",
+      "added_by": "ops:leon",
+      "added_at": "2026-03-18T15:31:44Z"
+    }
+  ],
+  "records": [
+    {
+      "person_id": "P-8F3A21",
+      "crop_key": "events/nb15k-2026/crops/P-8F3A21_0.jpg",
+      "state": "approved",
+      "confidence": 0.95,
+      "detected": { "brand": "Nike", "model": "Vaporfly 3" },
+      "curated": { "brand": "Nike", "model": "Vaporfly 3" },
+      "included_in_report": true,
+      "flags": [],
+      "decision": { "actor": "ops:leon", "decided_at": "2026-03-18T15:22:03Z", "method": "bulk_mosaic", "note": null }
+    },
+    {
+      "person_id": "P-2C9D44",
+      "crop_key": "events/nb15k-2026/crops/P-2C9D44_0.jpg",
+      "state": "corrected",
+      "confidence": 0.64,
+      "detected": { "brand": "Nike", "model": "Pegasus 41" },
+      "curated": { "brand": "Adidas", "model": "Adizero Evo SL" },
+      "included_in_report": true,
+      "flags": ["brand_changed", "model_changed", "low_confidence"],
+      "decision": { "actor": "ops:leon", "decided_at": "2026-03-18T15:27:51Z", "method": "individual", "note": "Motor confundio la marca; la silueta y las 3 bandas son Adidas." }
+    },
+    {
+      "person_id": "P-7B1E09",
+      "crop_key": "events/nb15k-2026/crops/P-7B1E09_0.jpg",
+      "state": "corrected",
+      "confidence": 0.71,
+      "detected": { "brand": "Adidas", "model": "Adizero Adios Pro 3" },
+      "curated": { "brand": "Adidas", "model": "Adizero Prime X 3" },
+      "included_in_report": true,
+      "flags": ["model_changed", "new_model_from_catalog"],
+      "decision": { "actor": "ops:leon", "decided_at": "2026-03-18T15:31:50Z", "method": "individual", "note": "Modelo no existia en catalogo; dado de alta." }
+    },
+    {
+      "person_id": "P-5A0022",
+      "crop_key": "events/nb15k-2026/crops/P-5A0022_0.jpg",
+      "state": "discarded",
+      "confidence": 0.58,
+      "detected": { "brand": "New Balance", "model": null },
+      "curated": null,
+      "included_in_report": false,
+      "flags": ["false_positive"],
+      "decision": { "actor": "ops:leon", "decided_at": "2026-03-18T15:34:10Z", "method": "individual", "note": "Cruce de piernas de dos corredores; no es un par valido." }
+    }
+  ]
+}

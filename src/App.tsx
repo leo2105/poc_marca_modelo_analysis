@@ -1,0 +1,103 @@
+import { useEffect, useState } from 'react'
+import { DetailView } from './components/DetailView'
+import { MosaicView } from './components/MosaicView'
+import { PanelView } from './components/PanelView'
+import { PublishView } from './components/PublishView'
+import { Sidebar } from './components/Sidebar'
+import { useValidationStore } from './hooks/useValidationStore'
+import { isPendingModel } from './utils/record'
+import type { ValidationView } from './types'
+
+function App() {
+  const store = useValidationStore()
+  const [view, setView] = useState<ValidationView>('panel')
+  const [darkMode, setDarkMode] = useState(() => {
+    const saved = localStorage.getItem('len-dashboard-theme')
+    return saved ? saved === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches
+  })
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = darkMode ? 'dark' : 'light'
+    localStorage.setItem('len-dashboard-theme', darkMode ? 'dark' : 'light')
+  }, [darkMode])
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement
+      if (target.matches('input, select, textarea')) return
+      if (view !== 'detail') return
+      const record = store.records[store.detailIndex]
+      if (!record) return
+      const key = event.key.toLowerCase()
+      const pendingModel = isPendingModel(record, store.displayCatalog)
+      if (key === 'a' && !pendingModel) { store.approveRecords([record.personId], 'individual'); store.setDetailIndex((store.detailIndex + 1) % store.records.length) }
+      if (key === 'r') { store.rejectRecords([record.personId], 'individual'); store.setDetailIndex((store.detailIndex + 1) % store.records.length) }
+      if (key === 'd') { store.discardRecords([record.personId], 'individual'); store.setDetailIndex((store.detailIndex + 1) % store.records.length) }
+      if (event.key === 'ArrowRight') store.setDetailIndex((store.detailIndex + 1) % store.records.length)
+      if (event.key === 'ArrowLeft') store.setDetailIndex((store.detailIndex - 1 + store.records.length) % store.records.length)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [store, view])
+
+  const navigate = (next: ValidationView) => {
+    setView(next)
+    window.scrollTo(0, 0)
+  }
+
+  return (
+    <div className="app">
+      <Sidebar activeView={view} pending={store.summary.pending} onNavigate={navigate} />
+      <main className="main">
+        {view === 'panel' && (
+          <PanelView
+            summary={store.summary}
+            records={store.records}
+            displayCatalog={store.displayCatalog}
+            darkMode={darkMode}
+            onDarkModeChange={setDarkMode}
+            onStartValidation={() => navigate('mosaic')}
+          />
+        )}
+        {view === 'mosaic' && (
+          <MosaicView
+            records={store.records}
+            displayCatalog={store.displayCatalog}
+            onApprove={(ids) => store.approveRecords(ids)}
+            onReject={(ids) => store.rejectRecords(ids)}
+            onDiscard={(ids) => store.discardRecords(ids)}
+            onCorrectBrand={(ids, brand) => store.correctBrand(ids, brand)}
+            onCorrectModel={(ids, brand, model) => store.correctModel(ids, brand, model)}
+            onOpenDetail={(index) => { store.setDetailIndex(index); navigate('detail') }}
+          />
+        )}
+        {view === 'detail' && (
+          <DetailView
+            records={store.records}
+            index={store.detailIndex}
+            displayCatalog={store.displayCatalog}
+            onIndexChange={store.setDetailIndex}
+            onApprove={(id) => store.approveRecords([id], 'individual')}
+            onReject={(id) => store.rejectRecords([id], 'individual')}
+            onDiscard={(id) => store.discardRecords([id], 'individual')}
+            onCorrectBrand={(id, brand) => store.correctBrand([id], brand, 'individual')}
+            onCorrectModel={(id, brand, model) => store.correctModel([id], brand, model, 'individual')}
+          />
+        )}
+        {view === 'publish' && (
+          <PublishView
+            summary={store.summary}
+            published={store.published}
+            onExportJson={store.exportValidationJson}
+            onPublish={() => {
+              store.setPublished(true)
+              window.alert('Corrida publicada. La reportería aprobada ya está disponible en el dashboard del cliente.')
+            }}
+          />
+        )}
+      </main>
+    </div>
+  )
+}
+
+export default App

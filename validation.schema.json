@@ -1,0 +1,185 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://len.pe/schemas/shoe-counting/validation/1.0.json",
+  "title": "LEN Shoe Counting — Validation Contract",
+  "description": "Contrato de la capa de validacion administrativa (curaduria humana). Se ubica ENTRE el contrato de detecciones (que produce el Shoe Matcher) y el Report Builder. Cada objeto de 'records' representa la decision de curaduria sobre un corredor/recorte del contrato de detecciones, referenciado por person_id + crop_key de la misma corrida (source_run_id). El Report Builder consume ESTE contrato, no el de detecciones directamente, y agrega SOLO los registros en estado 'approved' o 'corrected', usando los valores de 'curated'. Atributos como sexo y edad NO se duplican aqui: se toman del contrato de detecciones via join por person_id. La representacion en disco sugerida es Parquet particionado por event_id/run_id; este JSON Schema describe el modelo logico de cada fila y valida el manifest de la corrida de validacion.",
+  "type": "object",
+  "required": ["schema_version", "event_id", "run_id", "source_run_id", "generated_at", "records"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0",
+      "description": "Version del contrato de validacion. Un consumidor que soporta 1.x debe rechazar 2.x. Cambios que agregan campos opcionales suben la minor; cambios que rompen suben la major."
+    },
+    "event_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "description": "Identificador canonico del evento en kebab-case. Clave de particion. Debe ser el mismo del contrato de detecciones.",
+      "examples": ["nb15k-2026", "maraton-lima-42k-2026"]
+    },
+    "run_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._-]+$",
+      "description": "Identificador de la corrida de VALIDACION. Distinto del run de detecciones: una misma corrida de detecciones puede validarse mas de una vez (recuraduria). Convencion sugerida: timestamp + hash corto.",
+      "examples": ["val-20260318T1540-a91c"]
+    },
+    "source_run_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._-]+$",
+      "description": "run_id del contrato de detecciones que esta corrida esta validando. Amarra las dos capas: garantiza que person_id y crop_key referencian la misma corrida de deteccion.",
+      "examples": ["20260316T0210-m3a7f"]
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Timestamp ISO 8601 del cierre de esta corrida de validacion (momento en que se genero el manifest)."
+    },
+    "catalog_version": {
+      "type": "string",
+      "description": "Version de catalog.json (catalogo controlado de marcas/modelos) vigente durante la validacion. Opcional pero recomendado para trazabilidad.",
+      "examples": ["catalog-2026.03"]
+    },
+    "published": {
+      "type": "boolean",
+      "default": false,
+      "description": "true solo cuando la corrida paso el gate de publicacion (cero registros en 'pending') y la reporteria se libero al Report Builder / dashboard del cliente. Mientras es false, ningun consumidor cliente debe leer resultados derivados de esta corrida.",
+      "examples": [true]
+    },
+    "summary": { "$ref": "#/$defs/summary" },
+    "catalog_additions": {
+      "type": "array",
+      "description": "Altas de catalogo hechas a mano por el validador durante la corrida (marca o modelo que no existian en catalog.json). Deben propagarse a catalog.json para persistir entre corridas.",
+      "items": { "$ref": "#/$defs/catalogAddition" }
+    },
+    "records": {
+      "type": "array",
+      "description": "Una entrada por corredor/recorte auditado. En una corrida publicada, no debe quedar ningun record en estado 'pending'.",
+      "items": { "$ref": "#/$defs/validationRecord" }
+    }
+  },
+  "$defs": {
+    "validationRecord": {
+      "type": "object",
+      "required": ["person_id", "crop_key", "state", "detected", "included_in_report", "decision"],
+      "additionalProperties": false,
+      "properties": {
+        "person_id": {
+          "type": "string",
+          "pattern": "^P-[A-Z0-9]{6,}$",
+          "description": "Identificador anonimo del corredor. DEBE coincidir con el person_id del contrato de detecciones de la corrida referenciada en source_run_id. Es la llave de join con sexo/edad y demas atributos, que no se duplican en esta capa.",
+          "examples": ["P-8F3A21"]
+        },
+        "crop_key": {
+          "type": "string",
+          "description": "Key de S3 del recorte auditado (NO URL). Igual al del contrato de detecciones. La consola lo resuelve a miniatura via URL firmada de vida corta; el recorte contiene solo la zapatilla, nunca el rostro.",
+          "examples": ["events/nb15k-2026/crops/P-8F3A21_0.jpg"]
+        },
+        "state": {
+          "type": "string",
+          "enum": ["pending", "approved", "corrected", "rejected", "discarded"],
+          "description": "Estado de curaduria. Maquina de estados: 'pending' -> 'approved' | 'corrected' | 'rejected' | 'discarded'. SOLO 'approved' y 'corrected' viajan a consolidacion. 'corrected' = el validador reasigno marca y/o modelo. 'rejected' = clasificacion incorrecta que no se pudo corregir con certeza. 'discarded' = falso positivo o recorte no clasificable (p. ej. cruce de piernas de dos corredores)."
+        },
+        "confidence": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Confianza del match del motor, copiada del contrato de detecciones para trazabilidad. No se recalcula en esta capa. Null si no estaba disponible."
+        },
+        "detected": {
+          "$ref": "#/$defs/classification",
+          "description": "Clasificacion ORIGINAL del motor. INMUTABLE: se preserva siempre, aunque el validador corrija, para poder auditar la salida del modelo contra la decision humana."
+        },
+        "curated": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "description": "Clasificacion FINAL que el Report Builder debe usar. En 'approved' es identica a 'detected'. En 'corrected' refleja la reasignacion del validador. En 'rejected' y 'discarded' es null (no viaja al reporte).",
+          "properties": {
+            "brand": { "type": ["string", "null"], "minLength": 1, "description": "Marca final. Del catalogo controlado salvo altas manuales listadas en catalog_additions." },
+            "model": { "type": ["string", "null"], "description": "Modelo final. Null si solo se valido a nivel de marca." }
+          }
+        },
+        "included_in_report": {
+          "type": "boolean",
+          "description": "Derivado: true si y solo si state in {approved, corrected}. Se materializa para conveniencia del Report Builder; DEBE ser consistente con 'state'."
+        },
+        "flags": {
+          "type": "array",
+          "description": "Marcas informativas de la decision.",
+          "items": {
+            "type": "string",
+            "enum": ["brand_changed", "model_changed", "low_confidence", "false_positive", "new_brand_from_catalog", "new_model_from_catalog"]
+          }
+        },
+        "decision": { "$ref": "#/$defs/decision" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "state": { "enum": ["approved", "corrected"] } } },
+          "then": {
+            "required": ["curated"],
+            "properties": {
+              "included_in_report": { "const": true },
+              "curated": { "type": "object", "required": ["brand"], "properties": { "brand": { "type": "string", "minLength": 1 } } }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "state": { "enum": ["rejected", "discarded"] } } },
+          "then": { "properties": { "included_in_report": { "const": false }, "curated": { "type": "null" } } }
+        },
+        {
+          "if": { "properties": { "state": { "const": "pending" } } },
+          "then": { "properties": { "included_in_report": { "const": false } } }
+        }
+      ]
+    },
+    "classification": {
+      "type": "object",
+      "required": ["brand"],
+      "additionalProperties": false,
+      "properties": {
+        "brand": { "type": "string", "minLength": 1, "description": "Marca clasificada.", "examples": ["Adidas", "Nike", "Asics", "New Balance", "Puma", "Hoka"] },
+        "model": { "type": ["string", "null"], "description": "Modelo clasificado. Null si solo se identifico marca.", "examples": ["Adizero Adios Pro 4", "Vaporfly 3", null] }
+      }
+    },
+    "decision": {
+      "type": "object",
+      "required": ["actor", "decided_at", "method"],
+      "additionalProperties": false,
+      "description": "Quien tomo la decision, cuando y como. Alimenta el audit log inmutable.",
+      "properties": {
+        "actor": { "type": "string", "description": "Identificador del validador (cuenta administrativa LEN) que tomo la decision.", "examples": ["ops:leon", "ops:validador-01"] },
+        "decided_at": { "type": "string", "format": "date-time", "description": "Timestamp ISO 8601 de la decision." },
+        "method": { "type": "string", "enum": ["individual", "bulk_mosaic"], "description": "Modo en que se tomo la decision: 'individual' (vista de detalle) o 'bulk_mosaic' (accion en lote desde el mosaico)." },
+        "note": { "type": ["string", "null"], "description": "Nota opcional del validador." }
+      }
+    },
+    "catalogAddition": {
+      "type": "object",
+      "required": ["type", "brand", "added_by", "added_at"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "type": "string", "enum": ["brand", "model"], "description": "Tipo de alta." },
+        "brand": { "type": "string", "minLength": 1, "description": "Para type=brand: la marca nueva. Para type=model: la marca padre a la que pertenece el modelo nuevo." },
+        "model": { "type": ["string", "null"], "description": "Para type=model: el nombre del modelo nuevo. Null para altas de marca." },
+        "added_by": { "type": "string", "description": "Validador que dio de alta el valor." },
+        "added_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Conteos de control de la corrida. Deben cuadrar con 'records'.",
+      "properties": {
+        "total": { "type": "integer", "minimum": 0 },
+        "pending": { "type": "integer", "minimum": 0 },
+        "approved": { "type": "integer", "minimum": 0 },
+        "corrected": { "type": "integer", "minimum": 0 },
+        "rejected": { "type": "integer", "minimum": 0 },
+        "discarded": { "type": "integer", "minimum": 0 },
+        "included_in_report": { "type": "integer", "minimum": 0, "description": "Suma de approved + corrected. Es el universo que el Report Builder agrega." }
+      }
+    }
+  }
+}
