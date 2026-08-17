@@ -1,3 +1,5 @@
+import { authRequestHeaders } from '../auth/cognito'
+
 export interface SpriteSlot {
   index: number
   x: number
@@ -8,6 +10,8 @@ export interface SpriteSlot {
 
 export interface SpriteAnalysis {
   url: string
+  /** Blob local para CSS; evita re-fetch autenticado en background-image */
+  renderUrl: string
   width: number
   height: number
   slots: SpriteSlot[]
@@ -25,6 +29,21 @@ export type SpriteCropStyle = {
 }
 
 const analysisCache = new Map<string, Promise<SpriteAnalysis>>()
+const resolvedCache = new Map<string, SpriteAnalysis>()
+const blobUrlCache = new Map<string, string>()
+
+export function peekSpriteAnalysis(url: string): SpriteAnalysis | null {
+  return resolvedCache.get(url) ?? null
+}
+
+export function clearSpriteAnalysisCache() {
+  for (const blobUrl of blobUrlCache.values()) {
+    URL.revokeObjectURL(blobUrl)
+  }
+  blobUrlCache.clear()
+  analysisCache.clear()
+  resolvedCache.clear()
+}
 
 /** Posiciones posibles según el tamaño del sprite (1–4 recortes). */
 export function getLayoutSlots(width: number, height: number): SpriteSlot[] {
@@ -90,6 +109,7 @@ function isBlankRegion(data: Uint8ClampedArray, width: number, slot: SpriteSlot)
 export function analyzeSpriteImage(
   image: HTMLImageElement,
   url: string,
+  renderUrl: string,
 ): SpriteAnalysis {
   const canvas = document.createElement('canvas')
   canvas.width = image.naturalWidth
@@ -104,6 +124,7 @@ export function analyzeSpriteImage(
   const activeSlots = slots.filter((slot) => !isBlankRegion(data, width, slot))
   return {
     url,
+    renderUrl,
     width,
     height,
     slots,
@@ -111,25 +132,46 @@ export function analyzeSpriteImage(
   }
 }
 
+function loadImageElement(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const image = new Image()
+    image.decoding = 'async'
+    image.onload = () => resolve(image)
+    image.onerror = () => reject(new Error('No se pudo decodificar imagen'))
+    image.src = src
+  })
+}
+
 export function loadSpriteAnalysis(url: string): Promise<SpriteAnalysis> {
   const cached = analysisCache.get(url)
   if (cached) return cached
 
-  const promise = new Promise<SpriteAnalysis>((resolve, reject) => {
-    const image = new Image()
-    image.decoding = 'async'
-    image.onload = () => {
-      void (async () => {
-        try {
-          if (image.naturalWidth === 0) await image.decode()
-          resolve(analyzeSpriteImage(image, url))
-        } catch (error) {
-          reject(error)
-        }
-      })()
+  const promise = (async () => {
+    const response = await fetch(url, {
+      credentials: 'same-origin',
+      headers: authRequestHeaders(),
+    })
+    if (!response.ok) {
+      throw new Error(`No se pudo cargar ${url} (${response.status})`)
     }
-    image.onerror = () => reject(new Error(`No se pudo cargar ${url}`))
-    image.src = url
+    const blob = await response.blob()
+    const objectUrl = URL.createObjectURL(blob)
+    blobUrlCache.set(url, objectUrl)
+    try {
+      const image = await loadImageElement(objectUrl)
+      if (image.naturalWidth === 0) await image.decode()
+      const result = analyzeSpriteImage(image, url, objectUrl)
+      resolvedCache.set(url, result)
+      return result
+    } catch (error) {
+      URL.revokeObjectURL(objectUrl)
+      blobUrlCache.delete(url)
+      throw error
+    }
+  })().catch((error) => {
+    analysisCache.delete(url)
+    resolvedCache.delete(url)
+    throw error
   })
 
   analysisCache.set(url, promise)
@@ -145,8 +187,9 @@ export function spriteCropStyle(
     const targetHeight = 112
     const scale = targetHeight / slot.h
     const cellW = slot.w * scale
+    const src = analysis.renderUrl
     return {
-      backgroundImage: `url("${analysis.url}")`,
+      backgroundImage: `url("${src}")`,
       backgroundSize: `${analysis.width * scale}px ${analysis.height * scale}px`,
       backgroundPosition: `-${slot.x * scale}px -${slot.y * scale}px`,
       backgroundRepeat: 'no-repeat',
@@ -157,8 +200,9 @@ export function spriteCropStyle(
   }
 
   const scale = Math.min(460 / slot.w, 460 / slot.h)
+  const src = analysis.renderUrl
   return {
-    backgroundImage: `url("${analysis.url}")`,
+    backgroundImage: `url("${src}")`,
     backgroundSize: `${analysis.width * scale}px ${analysis.height * scale}px`,
     backgroundPosition: `-${slot.x * scale}px -${slot.y * scale}px`,
     backgroundRepeat: 'no-repeat',

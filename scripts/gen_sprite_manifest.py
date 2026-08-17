@@ -2,9 +2,9 @@ import csv
 from pathlib import Path
 
 root = Path(__file__).resolve().parents[1]
-folder = 'Malecon_Test_42k_07.26_sam3_yoloworld-onnx_pose-onnx_clip-vit-l14_384_best-quality'
+folder = 'carrera_homenaje_fiestas_patria_sam3_yoloworld-onnx_pose-onnx_clip-vit-l14_384'
 sprite_dir = root / 'public' / 'imgs' / 'sprites' / folder
-csv_path = root / 'public' / 'imgs' / 'sprites' / f'{folder}.csv'
+csv_path = root / 'public' / 'imgs' / 'serpapi_results' / f'{folder}.csv'
 
 files = sorted(p.name for p in sprite_dir.glob('person_*.jpg'))
 

@@ -1,3 +1,4 @@
+import { ArrowLeft } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import type { ValidationRecord } from '../types'
 import { useSpriteAnalysis } from '../hooks/useSpriteAnalysis'
@@ -10,8 +11,8 @@ interface DetailViewProps {
   index: number
   displayCatalog: Record<string, string[]>
   onIndexChange: (index: number) => void
+  onBackToMosaic: () => void
   onApprove: (id: string) => void
-  onReject: (id: string) => void
   onDiscard: (id: string) => void
   onCorrectBrand: (id: string, brand: string) => void
   onCorrectModel: (id: string, brand: string, model: string) => void
@@ -21,7 +22,7 @@ const STATE_LABEL: Record<ValidationRecord['state'], string> = {
   pending: 'Pendiente',
   approved: 'Aprobado',
   corrected: 'Corregido',
-  rejected: 'Rechazado',
+  rejected: 'Descartado',
   discarded: 'Descartado',
 }
 
@@ -30,8 +31,8 @@ export function DetailView({
   index,
   displayCatalog,
   onIndexChange,
+  onBackToMosaic,
   onApprove,
-  onReject,
   onDiscard,
   onCorrectBrand,
   onCorrectModel,
@@ -63,7 +64,13 @@ export function DetailView({
   return (
     <section className="view active">
       <div className="topbar">
-        <h2>Validación · detalle</h2>
+        <div className="topbar-left">
+          <button type="button" className="btn-ghost back-to-mosaic" onClick={onBackToMosaic}>
+            <ArrowLeft size={16} strokeWidth={2} aria-hidden />
+            Volver al mosaico
+          </button>
+          <h2>Validación · detalle</h2>
+        </div>
         <div className="top-actions"><span>Recorte {index + 1} de {records.length}</span></div>
       </div>
 
@@ -234,12 +241,11 @@ export function DetailView({
               </div>
             </div>
             <div className="detail-split">
-              <button className="vbtn no" onClick={() => { onReject(record.personId); move(1) }}>✕ Rechazar <kbd>R</kbd></button>
-              <button className="vbtn" onClick={() => { onDiscard(record.personId); move(1) }}>⌀ Falso positivo <kbd>D</kbd></button>
+              <button className="vbtn" onClick={() => { onDiscard(record.personId); move(1) }}>⌀ Descartar <kbd>D</kbd></button>
             </div>
           </div>
 
-          <div className="note">Atajos: <b>A</b> aprobar · <b>R</b> rechazar · <b>D</b> descartar · <b>← →</b> navegar. Cada decisión queda registrada en el log de auditoría.</div>
+          <div className="note">Atajos: <b>A</b> aprobar · <b>D</b> descartar · <b>← →</b> navegar. Cada decisión queda registrada en el log de auditoría.</div>
         </div>
       </div>
     </section>

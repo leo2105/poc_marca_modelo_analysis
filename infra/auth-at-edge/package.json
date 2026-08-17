@@ -1,0 +1,8 @@
+{
+  "name": "len-validation-auth-at-edge",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Lambda@Edge viewer-request Cognito JWT gate",
+  "main": "index.mjs"
+}

@@ -37,6 +37,7 @@ export function getMosaicDisplayState(
   displayCatalog: Record<string, string[]>,
 ): MosaicDisplayState {
   if (isPendingModel(record, displayCatalog)) return 'pending-model'
+  if (record.state === 'rejected') return 'discarded'
   return record.state
 }
 
@@ -80,8 +81,8 @@ export function withPendingModelState(
   if (
     isPendingModel(record, displayCatalog) &&
     record.state !== 'discarded' &&
-    record.state !== 'approved' &&
-    record.state !== 'rejected'
+    record.state !== 'rejected' &&
+    record.state !== 'approved'
   ) {
     return {
       ...record,

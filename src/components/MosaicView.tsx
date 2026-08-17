@@ -1,20 +1,33 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Search, Save, Undo2 } from 'lucide-react'
 import { DEMO_TOTAL } from '../data/demoData'
-import type { ValidationRecord } from '../types'
+import type { MosaicUiState, SessionSaveState, ValidationRecord } from '../types'
 import { ClassificationChange } from './ClassificationChange'
 import { SpriteCrop } from './SpriteCrop'
 import { brandColor } from '../utils/catalog'
 import { getEffectiveClassification, getMosaicDisplayState, isPendingLike, isPendingModel, isResolved } from '../utils/record'
+import type { MosaicDisplayState } from '../utils/record'
 
 interface MosaicViewProps {
   records: ValidationRecord[]
   displayCatalog: Record<string, string[]>
+  persistedUi: MosaicUiState | null
+  onPersistUi: (ui: MosaicUiState) => void
+  active?: boolean
+  canUndo: boolean
+  onUndo: () => void
   onApprove: (ids: string[]) => void
-  onReject: (ids: string[]) => void
   onDiscard: (ids: string[]) => void
   onCorrectBrand: (ids: string[], brand: string) => void
   onCorrectModel: (ids: string[], brand: string, model: string) => void
   onOpenDetail: (index: number) => void
+  bootstrapUi?: MosaicUiState | null
+  remoteSaveEnabled?: boolean
+  sessionDirty?: boolean
+  sessionSaveState?: SessionSaveState
+  sessionSaveError?: string | null
+  onSaveSession?: (ui: MosaicUiState) => void | Promise<void>
+  onMarkSessionDirty?: () => void
 }
 
 const STATUS_FILTERS = [
@@ -30,26 +43,102 @@ const CONF_FILTERS = [
   ['85-100', '85–100%'],
 ] as const
 
+const TILE_SYMBOL: Partial<Record<MosaicDisplayState, string>> = {
+  approved: '✓',
+  corrected: '↺',
+  discarded: '⌀',
+  'pending-model': 'M',
+}
+
+const DEFAULT_UI: MosaicUiState = {
+  brandFilter: 'all',
+  statusFilter: 'all',
+  confFilter: 'all',
+  scrollY: 0,
+  selectedIds: [],
+}
+
 export function MosaicView({
   records,
   displayCatalog,
+  persistedUi,
+  onPersistUi,
+  active = true,
+  canUndo,
+  onUndo,
   onApprove,
-  onReject,
   onDiscard,
   onCorrectBrand,
   onCorrectModel,
   onOpenDetail,
+  bootstrapUi,
+  remoteSaveEnabled = false,
+  sessionDirty = false,
+  sessionSaveState = 'idle',
+  sessionSaveError,
+  onSaveSession,
+  onMarkSessionDirty,
 }: MosaicViewProps) {
-  const [selected, setSelected] = useState<Set<string>>(new Set())
-  const [brandFilter, setBrandFilter] = useState('all')
-  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved'>('all')
-  const [confFilter, setConfFilter] = useState('all')
+  const initial = persistedUi ?? DEFAULT_UI
+  const [selected, setSelected] = useState<Set<string>>(() => new Set(initial.selectedIds))
+  const [brandFilter, setBrandFilter] = useState(initial.brandFilter)
+  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved'>(initial.statusFilter)
+  const [confFilter, setConfFilter] = useState(initial.confFilter)
   const [brandMenuOpen, setBrandMenuOpen] = useState(false)
   const [modelMenuOpen, setModelMenuOpen] = useState(false)
   const [newBrand, setNewBrand] = useState('')
   const [newModel, setNewModel] = useState('')
   const brandTrackRef = useRef<HTMLDivElement>(null)
+  const lastClickedIndexRef = useRef<number | null>(null)
+  const mosaicUndoRef = useRef<Array<{ type: 'selection' | 'action'; previous: string[] }>>([])
+  const [mosaicUndoCount, setMosaicUndoCount] = useState(0)
   const [brandScroll, setBrandScroll] = useState({ left: false, right: false })
+  const skipUiDirtyRef = useRef(true)
+  const bootstrapAppliedRef = useRef(false)
+
+  useEffect(() => {
+    if (!bootstrapUi || bootstrapAppliedRef.current) return
+    bootstrapAppliedRef.current = true
+    skipUiDirtyRef.current = true
+    setSelected(new Set(bootstrapUi.selectedIds))
+    setBrandFilter(bootstrapUi.brandFilter)
+    setStatusFilter(bootstrapUi.statusFilter)
+    setConfFilter(bootstrapUi.confFilter)
+    if (bootstrapUi.scrollY > 0) {
+      requestAnimationFrame(() => window.scrollTo(0, bootstrapUi.scrollY))
+    }
+  }, [bootstrapUi])
+
+  useEffect(() => {
+    if (!onMarkSessionDirty || skipUiDirtyRef.current) {
+      skipUiDirtyRef.current = false
+      return
+    }
+    onMarkSessionDirty()
+  }, [brandFilter, confFilter, onMarkSessionDirty, selected, statusFilter])
+
+  const snapshotUi = useCallback((): MosaicUiState => ({
+    brandFilter,
+    statusFilter,
+    confFilter,
+    scrollY: window.scrollY,
+    selectedIds: [...selected],
+  }), [brandFilter, confFilter, selected, statusFilter])
+
+  const snapshotRef = useRef(snapshotUi)
+  snapshotRef.current = snapshotUi
+  const persistRef = useRef(onPersistUi)
+  persistRef.current = onPersistUi
+
+  useEffect(() => {
+    if (!active) return
+    const onScroll = () => persistRef.current({ ...snapshotRef.current(), scrollY: window.scrollY })
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => {
+      persistRef.current(snapshotRef.current())
+      window.removeEventListener('scroll', onScroll)
+    }
+  }, [active])
 
   const brandFilters = useMemo(
     () => ['all', ...Object.keys(displayCatalog).sort((a, b) => a.localeCompare(b, 'es'))],
@@ -105,31 +194,116 @@ export function MosaicView({
     return brands.size === 1 ? [...brands][0] : null
   }, [records, selected])
 
-  const toggle = (id: string) => {
-    setSelected((current) => {
+  const sameSelection = (a: Set<string>, b: Iterable<string>) => {
+    const other = b instanceof Set ? b : new Set(b)
+    if (a.size !== other.size) return false
+    for (const id of a) if (!other.has(id)) return false
+    return true
+  }
+
+  const pushMosaicUndo = (type: 'selection' | 'action', previous: Iterable<string>) => {
+    mosaicUndoRef.current = [
+      ...mosaicUndoRef.current.slice(-49),
+      { type, previous: [...previous] },
+    ]
+    setMosaicUndoCount(mosaicUndoRef.current.length)
+  }
+
+  const commitSelection = (next: Set<string>, current: Set<string> = selected) => {
+    if (sameSelection(current, next)) return
+    pushMosaicUndo('selection', current)
+    setSelected(next)
+  }
+
+  const runDecision = (action: (ids: string[]) => void, ids: string[] = [...selected]) => {
+    if (!ids.length) return
+    pushMosaicUndo('action', ids)
+    action(ids)
+    setSelected(new Set())
+  }
+
+  const handleUndo = () => {
+    const stack = mosaicUndoRef.current
+    if (stack.length > 0) {
+      const last = stack[stack.length - 1]!
+      mosaicUndoRef.current = stack.slice(0, -1)
+      setMosaicUndoCount(mosaicUndoRef.current.length)
+      setSelected(new Set(last.previous))
+      if (last.type === 'action') onUndo()
+      return
+    }
+    if (canUndo) onUndo()
+  }
+
+  const canUndoNow = mosaicUndoCount > 0 || canUndo
+
+  const selectedRef = useRef(selected)
+  selectedRef.current = selected
+  const visibleRef = useRef(visible)
+  visibleRef.current = visible
+  const recordsRef = useRef(records)
+  recordsRef.current = records
+  const onOpenDetailRef = useRef(onOpenDetail)
+  onOpenDetailRef.current = onOpenDetail
+
+  const selectTile = useCallback((id: string, visibleIndex: number, shiftKey: boolean) => {
+    const current = selectedRef.current
+    if (shiftKey && lastClickedIndexRef.current !== null) {
+      const start = Math.min(lastClickedIndexRef.current, visibleIndex)
+      const end = Math.max(lastClickedIndexRef.current, visibleIndex)
+      const next = new Set(current)
+      const list = visibleRef.current
+      for (let i = start; i <= end; i += 1) {
+        next.add(list[i]!.personId)
+      }
+      commitSelection(next, current)
+    } else {
       const next = new Set(current)
       if (next.has(id)) next.delete(id)
       else next.add(id)
-      return next
-    })
-  }
+      commitSelection(next, current)
+      lastClickedIndexRef.current = visibleIndex
+    }
+  }, [])
 
-  const selectedIds = [...selected]
+  const openDetail = useCallback((personId: string) => {
+    persistRef.current({ ...snapshotRef.current(), scrollY: window.scrollY })
+    const index = recordsRef.current.findIndex((record) => record.personId === personId)
+    if (index >= 0) onOpenDetailRef.current(index)
+  }, [])
+
+  const handleUndoRef = useRef(handleUndo)
+  handleUndoRef.current = handleUndo
+  const runDecisionRef = useRef(runDecision)
+  runDecisionRef.current = runDecision
+  const commitSelectionRef = useRef(commitSelection)
+  commitSelectionRef.current = commitSelection
+  const onApproveRef = useRef(onApprove)
+  onApproveRef.current = onApprove
+  const onDiscardRef = useRef(onDiscard)
+  onDiscardRef.current = onDiscard
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if (!active) return
       const target = event.target as HTMLElement
       if (target.matches('input, select, textarea')) return
-      if (!selected.size) return
-      const ids = [...selected]
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
+        event.preventDefault()
+        handleUndoRef.current()
+        return
+      }
+      const current = selectedRef.current
+      if (!current.size) return
+      const ids = [...current]
       const key = event.key.toLowerCase()
-      if (key === 'a') { onApprove(ids); setSelected(new Set()) }
-      if (key === 'r') { onReject(ids); setSelected(new Set()) }
-      if (event.key === 'Escape') setSelected(new Set())
+      if (key === 'a') runDecisionRef.current(onApproveRef.current, ids)
+      if (key === 'r' || key === 'd') runDecisionRef.current(onDiscardRef.current, ids)
+      if (event.key === 'Escape') commitSelectionRef.current(new Set())
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [onApprove, onReject, selected])
+  }, [active])
 
   return (
     <section className="view active">
@@ -200,27 +374,28 @@ export function MosaicView({
         <span className="li"><span className="dot ok" />Aprobado</span>
         <span className="li"><span className="dot corrected" />Corregido</span>
         <span className="li"><span className="dot pending-model" />Pendiente modelo</span>
-        <span className="li"><span className="dot rejected" />Rechazado</span>
-        <span className="li"><span className="dot discarded" />Descartado</span>
+        <span className="li" title="Falso positivo o recorte inválido (p. ej. piernas cruzadas)"><span className="dot discarded" />Descartado</span>
         <span className="li"><span className="dot selected" />Seleccionado</span>
       </div>
 
       <div className="vtoolbar">
         <span className="sel"><b>{selected.size}</b> seleccionados</span>
-        <button className="vbtn ok" disabled={!selected.size} onClick={() => { onApprove(selectedIds); setSelected(new Set()) }}>✓ Aprobar <kbd>A</kbd></button>
-        <button className="vbtn no" disabled={!selected.size} onClick={() => { onReject(selectedIds); setSelected(new Set()) }}>✕ Rechazar <kbd>R</kbd></button>
+        <button className="vbtn" disabled={!canUndoNow} onClick={handleUndo} title="Deshacer (Ctrl+Z)">
+          <Undo2 size={14} strokeWidth={2} aria-hidden /> Deshacer
+        </button>
+        <button className="vbtn ok" disabled={!selected.size} onClick={() => runDecision(onApprove)}>✓ Aprobar <kbd>A</kbd></button>
         <div className={`menu ${brandMenuOpen ? 'open' : ''}`}>
           <button className="vbtn" disabled={!selected.size} onClick={() => { setBrandMenuOpen((v) => !v); setModelMenuOpen(false) }}>↺ Reasignar marca ▾</button>
           <div className="menu-pop">
             <div className="menu-lab">MARCAS</div>
             {Object.keys(displayCatalog).map((brand) => (
-              <button key={brand} onClick={() => { onCorrectBrand(selectedIds, brand); setSelected(new Set()); setBrandMenuOpen(false) }}>
+              <button key={brand} onClick={() => { runDecision((ids) => onCorrectBrand(ids, brand)); setBrandMenuOpen(false) }}>
                 <span className="bdot" style={{ background: brandColor(brand) }} />{brand}
               </button>
             ))}
             <div className="menu-new">
               <input type="text" value={newBrand} onChange={(e) => setNewBrand(e.target.value)} onClick={(e) => e.stopPropagation()} placeholder="Nueva marca…" />
-              <button type="button" className="add" onClick={(e) => { e.stopPropagation(); if (newBrand.trim()) { onCorrectBrand(selectedIds, newBrand.trim()); setNewBrand(''); setSelected(new Set()); setBrandMenuOpen(false) } }}>＋</button>
+              <button type="button" className="add" onClick={(e) => { e.stopPropagation(); if (newBrand.trim()) { runDecision((ids) => onCorrectBrand(ids, newBrand.trim())); setNewBrand(''); setBrandMenuOpen(false) } }}>＋</button>
             </div>
           </div>
         </div>
@@ -231,13 +406,13 @@ export function MosaicView({
               <>
                 <div className="menu-lab">MODELOS · {selectedBrand}</div>
                 {(displayCatalog[selectedBrand] ?? []).map((model) => (
-                  <button key={model} onClick={() => { onCorrectModel(selectedIds, selectedBrand, model); setSelected(new Set()); setModelMenuOpen(false) }}>
+                  <button key={model} onClick={() => { runDecision((ids) => onCorrectModel(ids, selectedBrand, model)); setModelMenuOpen(false) }}>
                     {model}
                   </button>
                 ))}
                 <div className="menu-new">
                   <input type="text" value={newModel} onChange={(e) => setNewModel(e.target.value)} onClick={(e) => e.stopPropagation()} placeholder="Nuevo modelo…" />
-                  <button type="button" className="add" onClick={(e) => { e.stopPropagation(); if (newModel.trim()) { onCorrectModel(selectedIds, selectedBrand, newModel.trim()); setNewModel(''); setSelected(new Set()); setModelMenuOpen(false) } }}>＋</button>
+                  <button type="button" className="add" onClick={(e) => { e.stopPropagation(); if (newModel.trim()) { runDecision((ids) => onCorrectModel(ids, selectedBrand, newModel.trim())); setNewModel(''); setModelMenuOpen(false) } }}>＋</button>
                 </div>
               </>
             ) : (
@@ -245,39 +420,146 @@ export function MosaicView({
             )}
           </div>
         </div>
-        <button className="vbtn" disabled={!selected.size} onClick={() => { onDiscard(selectedIds); setSelected(new Set()) }}>⌀ Descartar</button>
-        <button className="vbtn" disabled={!selected.size} onClick={() => setSelected(new Set())}>Limpiar</button>
+        <button className="vbtn" disabled={!selected.size} onClick={() => runDecision(onDiscard)}>⌀ Descartar <kbd>D</kbd></button>
+        <button className="vbtn" disabled={!selected.size} onClick={() => commitSelection(new Set())}>Limpiar selección</button>
+        {remoteSaveEnabled && (
+          <>
+            <button
+              type="button"
+              className={`vbtn save${sessionDirty ? ' is-dirty' : ''}`}
+              disabled={!sessionDirty || sessionSaveState === 'saving'}
+              onClick={() => void onSaveSession?.(snapshotUi())}
+              title="Guardar decisiones y preferencias del mosaico en la nube"
+            >
+              <Save size={14} strokeWidth={2} aria-hidden />
+              {sessionSaveState === 'saving' ? 'Guardando…' : 'Guardar cambios'}
+            </button>
+            <span className={`session-save-hint${sessionSaveState === 'error' ? ' error' : ''}`}>
+              {sessionSaveState === 'error' && sessionSaveError
+                ? sessionSaveError
+                : sessionDirty
+                  ? 'Cambios sin guardar'
+                  : sessionSaveState === 'saved'
+                    ? 'Guardado en la nube'
+                    : ''}
+            </span>
+          </>
+        )}
       </div>
 
       <div className="mosaic">
-        {visible.map((record) => {
+        {visible.map((record, visibleIndex) => {
           const displayState = getMosaicDisplayState(record, displayCatalog)
-          const symbolMap: Partial<Record<ValidationRecord['state'] | 'pending-model', string>> = {
-            approved: '✓',
-            corrected: '↺',
-            rejected: '✕',
-            discarded: '⌀',
-            'pending-model': 'M',
-          }
-          const symbol = symbolMap[displayState] ?? ''
           return (
-            <article
+            <MosaicTile
               key={record.personId}
-              className={`vtile ${displayState}${selected.has(record.personId) ? ' sel' : ''}`}
-              onClick={() => toggle(record.personId)}
-            >
-              {record.confidence < 0.7 && <span className="low">{record.confidence.toFixed(2)}</span>}
-              <span className="st">{symbol}</span>
-              <button className="open" onClick={(event) => { event.stopPropagation(); onOpenDetail(records.indexOf(record)) }}>🔍 detalle</button>
-              <SpriteCrop spriteUrl={record.spriteUrl} image={record.image} className="mosaic-crop" />
-              <div className="cap">
-                <ClassificationChange record={record} displayCatalog={displayCatalog} compact />
-              </div>
-            </article>
+              record={record}
+              displayCatalog={displayCatalog}
+              displayState={displayState}
+              symbol={TILE_SYMBOL[displayState] ?? ''}
+              selected={selected.has(record.personId)}
+              visibleIndex={visibleIndex}
+              onSelect={selectTile}
+              onOpenDetail={openDetail}
+            />
           )
         })}
       </div>
-      <div className="vscale">Mostrando {visible.length} de {DEMO_TOTAL.toLocaleString('es-PE')} recortes de la corrida · orden por confianza</div>
+      <div className="vscale">Mostrando {visible.length} de {DEMO_TOTAL.toLocaleString('es-PE')} recortes de la corrida · orden por confianza · <kbd>Shift</kbd>+clic para rango</div>
     </section>
   )
 }
+
+interface MosaicTileProps {
+  record: ValidationRecord
+  displayCatalog: Record<string, string[]>
+  displayState: MosaicDisplayState
+  symbol: string
+  selected: boolean
+  visibleIndex: number
+  onSelect: (id: string, visibleIndex: number, shiftKey: boolean) => void
+  onOpenDetail: (personId: string) => void
+}
+
+const MosaicTile = memo(function MosaicTile({
+  record,
+  displayCatalog,
+  displayState,
+  symbol,
+  selected,
+  visibleIndex,
+  onSelect,
+  onOpenDetail,
+}: MosaicTileProps) {
+  const [slotIndex, setSlotIndex] = useState(0)
+  const [slotCount, setSlotCount] = useState(0)
+  const canCycle = slotCount > 1
+  const safeIndex = slotCount > 0 ? Math.min(slotIndex, slotCount - 1) : 0
+
+  const cycle = (step: number) => {
+    if (!canCycle) return
+    setSlotIndex((current) => (current + step + slotCount) % slotCount)
+  }
+
+  return (
+    <article
+      className={`vtile ${displayState}${selected ? ' sel' : ''}`}
+      onPointerDown={(event) => {
+        if (event.button !== 0) return
+        const target = event.target as HTMLElement
+        if (target.closest('button, .vtile-nav')) return
+        event.preventDefault()
+        onSelect(record.personId, visibleIndex, event.shiftKey)
+      }}
+    >
+      <span className="st">{symbol}</span>
+      <div className="vtile-nav" onClick={(event) => event.stopPropagation()} onMouseDown={(event) => event.stopPropagation()}>
+        <button
+          type="button"
+          className="vtile-nav-btn"
+          aria-label="Perspectiva anterior"
+          disabled={!canCycle}
+          onClick={(event) => {
+            event.stopPropagation()
+            cycle(-1)
+          }}
+        >
+          ‹
+        </button>
+        <button
+          type="button"
+          className="vtile-nav-btn"
+          aria-label="Perspectiva siguiente"
+          disabled={!canCycle}
+          onClick={(event) => {
+            event.stopPropagation()
+            cycle(1)
+          }}
+        >
+          ›
+        </button>
+      </div>
+      <button
+        type="button"
+        className="open"
+        aria-label="Ver detalle"
+        onClick={(event) => {
+          event.stopPropagation()
+          onOpenDetail(record.personId)
+        }}
+      >
+        <Search size={14} strokeWidth={2} />
+      </button>
+      <SpriteCrop
+        spriteUrl={record.spriteUrl}
+        image={record.image}
+        slotIndex={safeIndex}
+        className="mosaic-crop"
+        onSlotCount={setSlotCount}
+      />
+      <div className="cap">
+        <ClassificationChange record={record} displayCatalog={displayCatalog} compact />
+      </div>
+    </article>
+  )
+})

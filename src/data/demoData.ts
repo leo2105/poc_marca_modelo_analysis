@@ -1,16 +1,21 @@
 import type { ValidationRecord, ValidationRun } from '../types'
-import { catalogKeyToLabel, modelKeyToLabel, normalizeBrandLabel, normalizeModelLabel, UNKNOWN_BRAND_LABEL, UNKNOWN_MODEL_LABEL } from '../utils/catalog'
+import { normalizeBrandLabel, normalizeModelLabel, UNKNOWN_BRAND_LABEL, UNKNOWN_MODEL_LABEL } from '../utils/catalog'
 import { SPRITE_ANNOTATIONS } from './spriteAnnotations'
 import { DEMO_SPRITE_COUNT, SPRITE_FILES, spriteUrl } from './spriteManifest'
 
 export const DEMO_TOTAL = DEMO_SPRITE_COUNT
 export const DEMO_RECORD_COUNT = DEMO_SPRITE_COUNT
 
+export const EVENT_ID = 'carrera-homenaje-fiestas-patria'
+export const EVENT_TITLE = 'Carrera Homenaje Fiestas Patrias'
+/** Incrementar al cambiar de experimento o forzar arranque en cero. */
+export const VALIDATION_SESSION_EPOCH = '2026-08-04-images'
+
 export const validationRun: ValidationRun = {
   schemaVersion: '1.0',
-  eventId: 'nb15k-2026',
-  runId: 'val-20260318T1540-a91c',
-  sourceRunId: '20260316T0210-m3a7f',
+  eventId: EVENT_ID,
+  runId: 'val-20260804T1800-b7f2',
+  sourceRunId: 'carrera_homenaje_fiestas_patria_sam3_yoloworld-onnx_pose-onnx_clip-vit-l14_384',
   catalogVersion: 'catalog-2026.03',
   published: false,
   actor: 'ops:leon',
@@ -38,65 +43,28 @@ export function createDemoRecords(): ValidationRecord[] {
   for (let i = 0; i < spriteSample.length; i += 1) {
     const sprite = spriteUrl(spriteSample[i])
     const annotation = getAnnotation(spriteSample[i])
-    const brand = annotation ? normalizeBrandLabel(annotation.brand) : 'Nike'
-    const model = annotation ? normalizeModelLabel(annotation.model) : 'Pegasus'
-    const confidence = annotation ? Number(annotation.score.toFixed(2)) : 0.5
-    const wrong = confidence < 0.5
-
-    let state: ValidationRecord['state'] = 'pending'
-    if (!wrong) {
-      const remainder = i % 5
-      if (remainder === 0 || remainder === 1) state = 'approved'
-      else if (remainder === 2) state = 'corrected'
-      else if (i % 11 === 7) state = 'discarded'
-    }
-
-    const curated =
-      state === 'approved' || state === 'corrected'
-        ? { brand, model }
-        : null
-
-    const personNum = spriteSample[i].match(/person_(\d+)/)?.[1] ?? String(i + 2).padStart(6, '0')
+    const brand = annotation ? normalizeBrandLabel(annotation.brand) : UNKNOWN_BRAND_LABEL
+    const model = annotation ? normalizeModelLabel(annotation.model) : UNKNOWN_MODEL_LABEL
+    const confidence = annotation ? Number(annotation.score.toFixed(2)) : 0
+    const personNum = spriteSample[i].match(/person_(\d+)/)?.[1] ?? String(i + 1).padStart(6, '0')
 
     records.push({
       personId: `P-${personNum}`,
-      cropKey: `events/nb15k-2026/crops/person_${personNum}.jpg`,
+      cropKey: `events/${EVENT_ID}/crops/person_${personNum}.jpg`,
       spriteUrl: sprite,
       image: sprite,
       perspectives: [sprite],
-      state,
+      state: 'pending',
       confidence,
       detected: sanitizeDetected({ brand, model }),
-      curated,
-      includedInReport: state === 'approved' || state === 'corrected',
-      wrong,
-      frames: ['5/5', '4/5', '3/5'][i % 3],
+      curated: null,
+      includedInReport: false,
+      wrong: false,
+      frames: '—',
       camera: `CAM-0${(i % 2) + 1}`,
       capturedAt: `${500 + i * 11}.${i % 9}s`,
     })
   }
 
   return records
-}
-
-export function seedCatalogLabels() {
-  return {
-    Adidas: ['Adizero', 'Ultraboost', 'Supernova'],
-    Nike: ['Pegasus', 'Vaporfly', 'Alphafly'],
-    Asics: ['Gel Nimbus', 'Gel Kayano', 'Novablast'],
-    'New Balance': ['1080', 'Fuelcell Rebel', 'More'],
-    Puma: ['Deviate Nitro', 'Velocity Nitro'],
-    Hoka: ['Clifton', 'Mach', 'Rocket X'],
-    ...Object.fromEntries(
-      ['Brooks', 'Saucony', 'On'].map((brand) => [brand, [`${brand} Model`]]),
-    ),
-  }
-}
-
-export function catalogFromJson(catalog: Record<string, string[]>) {
-  const display: Record<string, string[]> = {}
-  for (const [brandKey, models] of Object.entries(catalog)) {
-    display[catalogKeyToLabel(brandKey)] = models.map(modelKeyToLabel)
-  }
-  return display
 }

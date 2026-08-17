@@ -28,7 +28,7 @@ export function ClassificationChange({ record, displayCatalog, compact = false }
           ) : (
             effective.brand
           )}
-          <span className="conf">{record.confidence.toFixed(2)}</span>
+          <span className={`conf${record.confidence < 0.7 ? ' is-low' : ''}`}>{record.confidence.toFixed(2)}</span>
         </div>
         <div className="capm">
           {pendingModel ? (

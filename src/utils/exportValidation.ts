@@ -91,7 +91,7 @@ function buildFlags(
   if (brandChanged) flags.push('brand_changed')
   if (modelChanged) flags.push('model_changed')
   if (record.confidence < LOW_SCORE_THRESHOLD) flags.push('low_confidence')
-  if (record.state === 'discarded') flags.push('false_positive')
+  if (record.state === 'discarded' || record.state === 'rejected') flags.push('false_positive')
 
   if (record.curated) {
     if (isCatalogBrandNew(record.curated.brand, baseCatalog)) {
@@ -109,7 +109,7 @@ function buildFlags(
 
 function exportCurated(record: ValidationRecord, displayCatalog: DisplayCatalog) {
   const pendingModel = isPendingModel(record, displayCatalog)
-  if (record.state === 'rejected' || record.state === 'discarded' || pendingModel) return null
+  if (record.state === 'discarded' || record.state === 'rejected' || pendingModel) return null
   if (record.state === 'approved' || record.state === 'corrected') {
     return record.curated ?? record.detected
   }
@@ -194,7 +194,7 @@ export async function buildValidationExport({
     return {
       person_id: record.personId,
       crop_key: record.cropKey,
-      state: record.state,
+      state: record.state === 'rejected' ? 'discarded' : record.state,
       score: record.confidence,
       detected: record.detected,
       curated: exportCurated(record, displayCatalog),
@@ -209,7 +209,6 @@ export async function buildValidationExport({
     pending: 0,
     approved: 0,
     corrected: 0,
-    rejected: 0,
     discarded: 0,
     included_in_report: 0,
   }
@@ -219,8 +218,7 @@ export async function buildValidationExport({
     if (pendingModel || record.state === 'pending') summary.pending += 1
     else if (record.state === 'approved') summary.approved += 1
     else if (record.state === 'corrected') summary.corrected += 1
-    else if (record.state === 'rejected') summary.rejected += 1
-    else if (record.state === 'discarded') summary.discarded += 1
+    else if (record.state === 'discarded' || record.state === 'rejected') summary.discarded += 1
     if (exportIncludedInReport(record, displayCatalog)) summary.included_in_report += 1
   }
 

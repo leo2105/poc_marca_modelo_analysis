@@ -1,4 +1,4 @@
-import { DEMO_TOTAL } from '../data/demoData'
+import { DEMO_TOTAL, EVENT_ID, EVENT_TITLE } from '../data/demoData'
 import { ThemeToggle } from './ThemeToggle'
 import type { ValidationRecord, ValidationSummary } from '../types'
 import { brandColor, UNKNOWN_BRAND_LABEL } from '../utils/catalog'
@@ -11,9 +11,10 @@ interface PanelViewProps {
   darkMode: boolean
   onDarkModeChange: (value: boolean) => void
   onStartValidation: () => void
+  onResetSession: () => void
 }
 
-export function PanelView({ summary, records, displayCatalog, darkMode, onDarkModeChange, onStartValidation }: PanelViewProps) {
+export function PanelView({ summary, records, displayCatalog, darkMode, onDarkModeChange, onStartValidation, onResetSession }: PanelViewProps) {
   const resolved = summary.total - summary.pending
   const pct = summary.total ? Math.round((resolved / summary.total) * 100) : 0
 
@@ -48,7 +49,7 @@ export function PanelView({ summary, records, displayCatalog, darkMode, onDarkMo
       label: 'Descartado',
       value: summary.discarded,
       tone: '',
-      hint: 'Rechazados y descartados (falso positivo u otro motivo).',
+      hint: 'Falso positivo o recorte inválido.',
     },
     {
       label: 'Corregido',
@@ -64,6 +65,17 @@ export function PanelView({ summary, records, displayCatalog, darkMode, onDarkMo
         <h2>Panel de corrida <span className="admin-tag">ADMIN</span></h2>
         <div className="top-actions">
           <ThemeToggle darkMode={darkMode} onChange={onDarkModeChange} />
+          <button
+            type="button"
+            className="btn-ghost"
+            onClick={() => {
+              if (window.confirm('¿Reiniciar toda la validación? Se perderán aprobaciones, correcciones y descartes guardados en este navegador.')) {
+                onResetSession()
+              }
+            }}
+          >
+            Reiniciar validación
+          </button>
           <button className="btn-dark" onClick={onStartValidation}>COMENZAR VALIDACIÓN →</button>
         </div>
       </div>
@@ -76,8 +88,8 @@ export function PanelView({ summary, records, displayCatalog, darkMode, onDarkMo
       <div className="evhero">
         <div className="ov" />
         <div className="txt">
-          <small>CORRIDA DE VALIDACIÓN · nb15k-2026</small>
-          <h3>New Balance 15K 2026</h3>
+          <small>CORRIDA DE VALIDACIÓN · {EVENT_ID}</small>
+          <h3>{EVENT_TITLE}</h3>
           <div className="tags">
             <span>Demo · {summary.total} de {DEMO_TOTAL.toLocaleString('es-PE')} recortes</span>
             <span>2 cámaras · callejón de llegada</span>

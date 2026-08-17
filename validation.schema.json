@@ -77,8 +77,8 @@
         },
         "state": {
           "type": "string",
-          "enum": ["pending", "approved", "corrected", "rejected", "discarded"],
-          "description": "Estado de curaduria. Maquina de estados: 'pending' -> 'approved' | 'corrected' | 'rejected' | 'discarded'. SOLO 'approved' y 'corrected' viajan a consolidacion. 'corrected' = el validador reasigno marca y/o modelo. 'rejected' = clasificacion incorrecta que no se pudo corregir con certeza. 'discarded' = falso positivo o recorte no clasificable (p. ej. cruce de piernas de dos corredores)."
+          "enum": ["pending", "approved", "corrected", "discarded"],
+          "description": "Estado de curaduria. Maquina de estados: 'pending' -> 'approved' | 'corrected' | 'discarded'. SOLO 'approved' y 'corrected' viajan a consolidacion. 'corrected' = el validador reasigno marca y/o modelo. 'discarded' = falso positivo o recorte no clasificable (p. ej. cruce de piernas de dos corredores). El valor legacy 'rejected' se normaliza a 'discarded' al exportar."
         },
         "confidence": {
           "type": ["number", "null"],
@@ -93,7 +93,7 @@
         "curated": {
           "type": ["object", "null"],
           "additionalProperties": false,
-          "description": "Clasificacion FINAL que el Report Builder debe usar. En 'approved' es identica a 'detected'. En 'corrected' refleja la reasignacion del validador. En 'rejected' y 'discarded' es null (no viaja al reporte).",
+          "description": "Clasificacion FINAL que el Report Builder debe usar. En 'approved' es identica a 'detected'. En 'corrected' refleja la reasignacion del validador. En 'discarded' es null (no viaja al reporte).",
           "properties": {
             "brand": { "type": ["string", "null"], "minLength": 1, "description": "Marca final. Del catalogo controlado salvo altas manuales listadas en catalog_additions." },
             "model": { "type": ["string", "null"], "description": "Modelo final. Null si solo se valido a nivel de marca." }
@@ -125,7 +125,7 @@
           }
         },
         {
-          "if": { "properties": { "state": { "enum": ["rejected", "discarded"] } } },
+          "if": { "properties": { "state": { "const": "discarded" } } },
           "then": { "properties": { "included_in_report": { "const": false }, "curated": { "type": "null" } } }
         },
         {
@@ -176,7 +176,6 @@
         "pending": { "type": "integer", "minimum": 0 },
         "approved": { "type": "integer", "minimum": 0 },
         "corrected": { "type": "integer", "minimum": 0 },
-        "rejected": { "type": "integer", "minimum": 0 },
         "discarded": { "type": "integer", "minimum": 0 },
         "included_in_report": { "type": "integer", "minimum": 0, "description": "Suma de approved + corrected. Es el universo que el Report Builder agrega." }
       }

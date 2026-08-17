@@ -1,4 +1,7 @@
 import type { ValidationView } from '../types'
+import { EVENT_ID } from '../data/demoData'
+import { useAuth } from '../auth/AuthGate'
+import { getCognitoConfig } from '../auth/cognito'
 
 interface SidebarProps {
   activeView: ValidationView
@@ -7,6 +10,10 @@ interface SidebarProps {
 }
 
 export function Sidebar({ activeView, pending, onNavigate }: SidebarProps) {
+  const auth = useAuth()
+  const cognitoEnabled = getCognitoConfig().enabled
+  const email = auth?.session.email
+
   return (
     <aside className="sidebar">
       <div className="logo">
@@ -34,10 +41,18 @@ export function Sidebar({ activeView, pending, onNavigate }: SidebarProps) {
       </nav>
       <div className="side-foot">
         <div className="who">
-          <div className="avatar">OP</div>
-          <div><b>LEN Ops</b><small>Cuenta administrativa</small></div>
+          <div className="avatar">{email ? email.slice(0, 2).toUpperCase() : 'OP'}</div>
+          <div>
+            <b>{email ?? 'LEN Ops'}</b>
+            <small>{cognitoEnabled ? 'Sesión Cognito' : 'Cuenta administrativa'}</small>
+          </div>
         </div>
-        <div className="ds">Corrida <span className="mono">nb15k-2026</span><br />Motor <span className="mono">marca v1</span></div>
+        {cognitoEnabled && auth && (
+          <button type="button" className="logout-btn" onClick={() => auth.logout()}>
+            Cerrar sesión
+          </button>
+        )}
+        <div className="ds">Corrida <span className="mono">{EVENT_ID}</span><br />Motor <span className="mono">marca v1</span></div>
       </div>
     </aside>
   )

@@ -4,3 +4,13 @@ dist
 *.local
 *.tsbuildinfo
 public/imgs/
+
+# Env / secrets
+.env
+.env.local
+.env.production
+.env.*.local
+
+# Lambda@Edge build artifacts
+infra/auth-at-edge/dist/
+infra/auth-at-edge/*.zip

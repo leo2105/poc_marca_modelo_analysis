@@ -1,6 +1,6 @@
 # Consola de validación LEN · Marca / Modelo
 
-Dashboard en React + TypeScript para revisar predicciones de marca y modelo de zapatillas de carrera, aprobar, corregir, rechazar o descartar, y exportar el resultado al contrato `validation.json`.
+Dashboard en React + TypeScript para revisar predicciones de marca y modelo de zapatillas de carrera, aprobar, corregir, descartar, y exportar el resultado al contrato `validation.json`.
 
 ## Vistas
 
@@ -9,7 +9,7 @@ Dashboard en React + TypeScript para revisar predicciones de marca y modelo de z
 3. **Validación · detalle** — revisión individual con atajos de teclado (`A`, `R`, `D`, flechas)
 4. **Publicación** — gate antes de liberar al cliente
 
-## Ejecución
+## Ejecución local (WSL / Ubuntu)
 
 Requiere Node.js 20 o superior.
 
@@ -18,17 +18,19 @@ npm install
 npm run dev
 ```
 
-En WSL con Conda:
+Con Conda:
 
 ```bash
 conda activate len_shoes
 npm run dev -- --host 0.0.0.0 --port 5173 --strictPort
 ```
 
+Copia `.env.example` → `.env` y deja `VITE_COGNITO_ENABLED=false` para trabajar sin login.
+
 ## Datos y contrato
 
 - Catálogo de marcas/modelos: `marcas-modelos-lista.json`
-- Registros demo: `src/data/demoData.ts` (191 recortes de la corrida Malecon Test)
+- Registros demo: `src/data/demoData.ts` (1943 recortes · Carrera Homenaje Fiestas Patrias)
 - Esquema de exportación: `validation.schema.json`
 - Ejemplo de salida: `validation.example.json`
 
@@ -36,9 +38,7 @@ Las revisiones se persisten en `localStorage` y pueden exportarse como JSON desd
 
 ## Imágenes y sprites
 
-Los recortes reales viven en `public/imgs/sprites/<nombre_carrera>/`. Cada archivo es un **sprite** con hasta 4 vistas de la misma zapatilla en un layout 2×2 (celdas de 256 px). Puede haber 1, 2, 3 o 4 celdas con contenido; las vacías se detectan en el cliente y no cuentan como perspectiva.
-
-La anotación inicial del motor (marca, modelo, score) viene del CSV homónimo en la misma carpeta, p. ej. `Malecon_Test_42k_07.26_….csv` con columnas `person_id`, `marca`, `modelo`, `score`.
+Los recortes viven en `public/imgs/sprites/<experimento>/` (gitignored). La anotación del motor viene del CSV en `public/imgs/serpapi_results/<experimento>.csv` (`person_id`, `marca`, `modelo`, `score`).
 
 | # imgs | Tamaño sprite | Posiciones |
 |--------|---------------|------------|
@@ -47,8 +47,31 @@ La anotación inicial del motor (marca, modelo, score) viene del CSV homónimo e
 | 3 | 512 × (cell_h×2) | arriba-izq, arriba-der, abajo-izq |
 | 4 | 512 × (cell_h×2) | grid 2×2 |
 
+- Experimento activo: `carrera_homenaje_fiestas_patria_sam3_yoloworld-onnx_pose-onnx_clip-vit-l14_384`
 - Manifiesto: `python scripts/gen_sprite_manifest.py` → `spriteManifest.ts` + `spriteAnnotations.ts`
-- Demo: los 191 sprites de `Malecon_Test_42k_07.26_…` con anotaciones del CSV
-- En desarrollo y build, Vite sirve `/imgs/…` desde `public/imgs/` (copiado a `dist/imgs/` al hacer build)
+- En **mosaico**, la miniatura muestra solo la **primera perspectiva** activa (lazy al entrar en viewport). En **detalle**, los puntitos reflejan las celdas activas.
 
-En **validación · detalle**, los puntitos bajo la imagen reflejan solo las celdas activas (no las blancas). En **mosaico**, se muestra la primera perspectiva válida de cada sprite y el score junto a la marca.
+## Deploy privado en AWS (WSL)
+
+Stack: **S3 (app + imgs) + CloudFront + Cognito + Lambda@Edge**.
+
+Guía completa: [`infra/DEPLOY.md`](infra/DEPLOY.md)
+
+```bash
+cp .env.example .env          # editar COGNITO_DOMAIN_PREFIX
+chmod +x scripts/*.sh
+npm run deploy
+npm run invite:user -- companero@empresa.com
+```
+
+Sync solo de imágenes tras cambiar sprites:
+
+```bash
+npm run sync:imgs
+```
+
+Actualizar solo la app (sin recrear infra ni Lambda@Edge):
+
+```bash
+npm run deploy:app
+```
