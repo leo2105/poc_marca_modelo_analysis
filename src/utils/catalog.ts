@@ -50,6 +50,20 @@ export function modelKeyToLabel(model: string) {
   return model.replaceAll('-', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
 }
 
+/** Mismo criterio que el dashboard: sin generación (Pro 4 → Pro, trailing 12 → strip). */
+export function displayModelName(raw: string): string {
+  let name = normalizeModelLabel(raw)
+  if (name === UNKNOWN_MODEL_LABEL) return name
+  name = name.replace(/\s+Pro\s+\d+$/i, ' Pro')
+  const parts = name.split(/\s+/)
+  const last = parts[parts.length - 1] ?? ''
+  if (/^\d{1,2}$/.test(last) && parts.length > 1) {
+    parts.pop()
+    name = parts.join(' ')
+  }
+  return name
+}
+
 export function normalizeModelLabel(raw: string) {
   const trimmed = raw.trim()
   if (!trimmed) return UNKNOWN_MODEL_LABEL
@@ -68,9 +82,24 @@ export function brandColor(brand: string) {
 export function buildDisplayCatalog(catalog: Catalog) {
   const display: Record<string, string[]> = {}
   for (const [brandKey, models] of Object.entries(catalog)) {
-    display[catalogKeyToLabel(brandKey)] = models.map(modelKeyToLabel)
+    const labels = [...new Set(models.map((model) => displayModelName(modelKeyToLabel(model))))]
+      .filter((label) => label !== UNKNOWN_MODEL_LABEL)
+      .sort((a, b) => a.localeCompare(b, 'es'))
+    display[catalogKeyToLabel(brandKey)] = labels
   }
   return display
+}
+
+export function mergeCatalogs(...catalogs: Catalog[]): Catalog {
+  const next: Catalog = {}
+  for (const catalog of catalogs) {
+    for (const [brand, models] of Object.entries(catalog)) {
+      const set = new Set(next[brand] ?? [])
+      for (const model of models) set.add(model)
+      next[brand] = [...set].sort((a, b) => a.localeCompare(b))
+    }
+  }
+  return next
 }
 
 export function ensureCatalogEntry(catalog: Catalog, brandLabel: string, modelLabel?: string) {
@@ -78,7 +107,7 @@ export function ensureCatalogEntry(catalog: Catalog, brandLabel: string, modelLa
   const next = { ...catalog }
   if (!next[brandKey]) next[brandKey] = []
   if (modelLabel) {
-    const modelKey = modelLabel.toLowerCase().replaceAll(' ', '-')
+    const modelKey = displayModelName(modelLabel).toLowerCase().replaceAll(' ', '-')
     if (!next[brandKey].includes(modelKey)) {
       next[brandKey] = [...next[brandKey], modelKey]
     }

@@ -10,8 +10,17 @@
   "adidas": [
     "adistar",
     "adizero",
+    "adizero-adios",
+    "adizero-adios-pro",
+    "adizero-boston",
+    "adizero-evo-sl",
+    "adizero-prime-x",
+    "adizero-sl",
+    "adizero-takumi",
     "duramo",
+    "duramo-speed",
     "hyperboost",
+    "hyperboost-pro",
     "nmd",
     "questar",
     "response",
@@ -19,8 +28,10 @@
     "solarcontrol",
     "solarglide",
     "supernova",
+    "supernova-rise",
     "terrex-agravic",
-    "ultraboost"
+    "ultraboost",
+    "yeezy"
   ],
   "altra": [
     "escalante",
@@ -32,7 +43,8 @@
     "rivera",
     "timp",
     "torin",
-    "vanish"
+    "vanish",
+    "vanish-carbon"
   ],
   "asics": [
     "dynablast",
@@ -50,6 +62,10 @@
     "magic-speed",
     "megablast",
     "metaspeed",
+    "metaspeed-edge",
+    "metaspeed-edge-tokyo",
+    "metaspeed-sky",
+    "nimbus",
     "noosa-tri",
     "novablast",
     "patriot",
@@ -67,6 +83,8 @@
     "glycerin",
     "glycerin-max",
     "hyperion",
+    "hyperion-elite",
+    "hyperion-max",
     "launch"
   ],
   "diadora": [
@@ -88,6 +106,9 @@
     "torrent",
     "zinal"
   ],
+  "li-ning": [
+    "feidian"
+  ],
   "lining": [
     "feidian"
   ],
@@ -104,13 +125,24 @@
     "wave-rider",
     "wave-sky"
   ],
+  "new-athletic": [
+    "tech-xl3"
+  ],
   "newbalance": [
+    "1080",
     "520",
     "680",
     "860",
     "880",
-    "1080",
+    "ellipse",
     "evoz",
+    "fresh-foam",
+    "fresh-foam-x",
+    "fresh-foam-x-more",
+    "fuelcell",
+    "fuelcell-rebel",
+    "fuelcell-sc-elite",
+    "fuelcell-supercomp",
     "garoe",
     "hierro",
     "kaiha",
@@ -122,33 +154,51 @@
     "sc-trainer"
   ],
   "nike": [
+    "air-max",
     "alphafly",
     "downshifter",
     "infinityrn",
     "invincible",
+    "juniper-trail",
+    "motiva",
     "pegasus",
+    "pegasus-plus",
+    "pegasus-trail",
+    "quest",
     "revolution",
     "streakfly",
     "structure",
     "ultrafly",
     "vaporfly",
     "vomero",
+    "vomero-plus",
+    "vomero-premium",
     "wildhorse",
     "zoom-fly"
+  ],
+  "olympikus": [
+    "corre",
+    "corre-supra",
+    "corre-turbo"
   ],
   "on": [
     "cloud-x",
     "cloudboom",
+    "cloudboom-max",
     "cloudflow",
     "cloudmonster",
     "cloudrunner",
     "cloudsurfer",
+    "cloudsurfer-next",
     "cloudvista"
   ],
   "puma": [
     "deviate-nitro",
+    "deviate-nitro-elite",
     "explore-nitro",
     "fast-r-nitro",
+    "fast-r-nitro-elite",
+    "flyer-runner",
     "foreverrun-nitro",
     "liberate-nitro",
     "magnify-nitro",
@@ -178,6 +228,8 @@
   ],
   "saucony": [
     "endorphin",
+    "endorphin-pro",
+    "endorphin-speed",
     "guide",
     "hurricane",
     "kinvara",
@@ -192,6 +244,8 @@
   "skechers": [
     "aero",
     "dlux-walker",
+    "go-run-consistent",
+    "go-walk",
     "gorun"
   ],
   "thenorthface": [
@@ -211,9 +265,11 @@
   ],
   "underarmour": [
     "charged-pursuit",
+    "hovr-phantom",
     "hovr-sonic",
     "infinite",
-    "velociti"
+    "velociti",
+    "velociti-pro"
   ],
   "veja": [
     "impala"

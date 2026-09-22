@@ -14,6 +14,20 @@ Parameters:
     Description: Prefijo único global del dominio Hosted UI (ej. len-validation-tuempresa)
     AllowedPattern: '^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$'
 
+  DashboardJwtAudience:
+    Type: String
+    Default: ''
+    Description: App client OAuth del dashboard (mismo User Pool) para leer el snapshot canónico
+
+  DashboardOrigin:
+    Type: String
+    Default: ''
+    Description: Origen HTTPS del dashboard (https://dxxxx.cloudfront.net) para CORS
+
+Conditions:
+  HasDashboardAudience: !Not [!Equals [!Ref DashboardJwtAudience, '']]
+  HasDashboardOrigin: !Not [!Equals [!Ref DashboardOrigin, '']]
+
 Resources:
   UserPool:
     Type: AWS::Cognito::UserPool
@@ -264,6 +278,10 @@ Resources:
         AllowOrigins:
           - !Sub 'https://${Distribution.DomainName}'
           - http://localhost:5173
+          - !If
+            - HasDashboardOrigin
+            - !Ref DashboardOrigin
+            - !Ref AWS::NoValue
         AllowMethods:
           - GET
           - PUT
@@ -283,8 +301,11 @@ Resources:
         - $request.header.Authorization
       Name: CognitoJwt
       JwtConfiguration:
-        Audience:
-          - !Ref UserPoolClient
+        Audience: !If
+          - HasDashboardAudience
+          - - !Ref UserPoolClient
+            - !Ref DashboardJwtAudience
+          - - !Ref UserPoolClient
         Issuer: !Sub 'https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}'
 
   ValidationApiIntegration:
@@ -300,6 +321,15 @@ Resources:
     Properties:
       ApiId: !Ref ValidationHttpApi
       RouteKey: GET /sessions/{eventId}
+      AuthorizationType: JWT
+      AuthorizerId: !Ref ValidationApiAuthorizer
+      Target: !Sub 'integrations/${ValidationApiIntegration}'
+
+  ValidationApiRouteGetCanonical:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ValidationHttpApi
+      RouteKey: GET /sessions/{eventId}/canonical
       AuthorizationType: JWT
       AuthorizerId: !Ref ValidationApiAuthorizer
       Target: !Sub 'integrations/${ValidationApiIntegration}'

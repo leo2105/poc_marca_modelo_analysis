@@ -1,6 +1,7 @@
 import type { ValidationDecisionDelta, ValidationRecord, ValidationSessionSnapshot } from '../types'
 import type { Catalog } from '../types'
-import { createDemoRecords, EVENT_ID, VALIDATION_SESSION_EPOCH } from '../data/demoData'
+import { createDemoRecords } from '../data/demoData'
+import type { RaceDefinition } from '../data/races'
 import { buildDisplayCatalog } from './catalog'
 import { getRecordPerspectives, withPendingModelState } from './record'
 
@@ -9,9 +10,15 @@ function recordDiffers(current: ValidationRecord, baseline: ValidationRecord): b
     current.state !== baseline.state ||
     current.includedInReport !== baseline.includedInReport ||
     current.wrong !== baseline.wrong ||
+    current.hiddenFromView !== baseline.hiddenFromView ||
+    JSON.stringify(current.hiddenSlotIndexes ?? []) !== JSON.stringify(baseline.hiddenSlotIndexes ?? []) ||
     JSON.stringify(current.curated) !== JSON.stringify(baseline.curated) ||
     current.decision?.decidedAt !== baseline.decision?.decidedAt
   )
+}
+
+function isSpritePath(url: string) {
+  return url.includes('/imgs/sprites/') || /\/imgs\/races\/[^/]+\/sprites\//.test(url)
 }
 
 export function buildSessionSnapshot(input: {
@@ -20,8 +27,10 @@ export function buildSessionSnapshot(input: {
   ui: ValidationSessionSnapshot['ui']
   published: boolean
   detailIndex: number
+  race: RaceDefinition
+  baseline?: ValidationRecord[]
 }): ValidationSessionSnapshot {
-  const baseline = createDemoRecords()
+  const baseline = input.baseline ?? createDemoRecords()
   const baselineMap = new Map(baseline.map((record) => [record.personId, record]))
   const decisions: Record<string, ValidationDecisionDelta> = {}
 
@@ -33,14 +42,16 @@ export function buildSessionSnapshot(input: {
       curated: record.curated,
       includedInReport: record.includedInReport,
       wrong: record.wrong,
+      hiddenSlotIndexes: record.hiddenSlotIndexes,
+      hiddenFromView: record.hiddenFromView,
       decision: record.decision,
     }
   }
 
   return {
     schemaVersion: '1.0',
-    eventId: EVENT_ID,
-    sessionEpoch: VALIDATION_SESSION_EPOCH,
+    eventId: input.race.eventId,
+    sessionEpoch: input.race.sessionEpoch,
     catalog: structuredClone(input.catalog),
     decisions,
     ui: input.ui ? structuredClone(input.ui) : null,
@@ -52,7 +63,7 @@ export function buildSessionSnapshot(input: {
 
 function normalizeLoadedRecord(record: ValidationRecord): ValidationRecord {
   const perspectives = getRecordPerspectives(record)
-  const spriteUrl = record.spriteUrl ?? (record.image.startsWith('/imgs/sprites/') ? record.image : undefined)
+  const spriteUrl = record.spriteUrl ?? (isSpritePath(record.image) ? record.image : undefined)
   const state = record.state === 'rejected' ? 'discarded' : record.state
   return {
     ...record,
@@ -63,7 +74,10 @@ function normalizeLoadedRecord(record: ValidationRecord): ValidationRecord {
   }
 }
 
-export function applySessionSnapshot(snapshot: ValidationSessionSnapshot): {
+export function applySessionSnapshot(
+  snapshot: ValidationSessionSnapshot,
+  baseline: ValidationRecord[] = createDemoRecords(),
+): {
   records: ValidationRecord[]
   catalog: Catalog
   published: boolean
@@ -72,9 +86,8 @@ export function applySessionSnapshot(snapshot: ValidationSessionSnapshot): {
 } {
   const catalog = structuredClone(snapshot.catalog)
   const displayCatalog = buildDisplayCatalog(catalog)
-  const demoRecords = createDemoRecords()
 
-  const records = demoRecords.map((demo) => {
+  const records = baseline.map((demo) => {
     const delta = snapshot.decisions[demo.personId]
     if (!delta) return demo
     return withPendingModelState(
@@ -84,6 +97,8 @@ export function applySessionSnapshot(snapshot: ValidationSessionSnapshot): {
         curated: delta.curated,
         includedInReport: delta.includedInReport,
         wrong: delta.wrong ?? demo.wrong,
+        hiddenSlotIndexes: delta.hiddenSlotIndexes,
+        hiddenFromView: delta.hiddenFromView,
         decision: delta.decision,
       }),
       displayCatalog,
@@ -99,6 +114,6 @@ export function applySessionSnapshot(snapshot: ValidationSessionSnapshot): {
   }
 }
 
-export function isSnapshotCompatible(snapshot: ValidationSessionSnapshot): boolean {
-  return snapshot.sessionEpoch === VALIDATION_SESSION_EPOCH && snapshot.eventId === EVENT_ID
+export function isSnapshotCompatible(snapshot: ValidationSessionSnapshot, race: RaceDefinition): boolean {
+  return snapshot.sessionEpoch === race.sessionEpoch && snapshot.eventId === race.eventId
 }

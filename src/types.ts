@@ -6,6 +6,7 @@ export type ValidationView = 'panel' | 'mosaic' | 'detail' | 'publish'
 
 export interface MosaicUiState {
   brandFilter: string
+  modelFilter: string
   statusFilter: 'all' | 'pending' | 'approved'
   confFilter: string
   scrollY: number
@@ -17,7 +18,7 @@ export type DecisionMethod = 'individual' | 'bulk_mosaic'
 export interface ValidationRecord {
   personId: string
   cropKey: string
-  /** Sprite 2×2 en public/imgs/sprites/<carrera>/, URL /imgs/sprites/… */
+  /** Sprite 2×2: /imgs/sprites/<experimento>/ (Homenaje) o /imgs/races/<eventId>/sprites/ */
   spriteUrl?: string
   image: string
   /** Hasta 4 recortes de la misma zapatilla (1–4 según disponibilidad). */
@@ -28,6 +29,10 @@ export interface ValidationRecord {
   curated: { brand: string; model: string } | null
   includedInReport: boolean
   wrong: boolean
+  /** Índices de slot del sprite (0–3) ocultos con "Eliminar recorte". */
+  hiddenSlotIndexes?: number[]
+  /** true si se eliminaron todas las vistas: no aparece en mosaico ni en el dashboard. */
+  hiddenFromView?: boolean
   frames: string
   camera: string
   capturedAt: string
@@ -64,6 +69,8 @@ export interface ValidationDecisionDelta {
   curated: { brand: string; model: string } | null
   includedInReport: boolean
   wrong?: boolean
+  hiddenSlotIndexes?: number[]
+  hiddenFromView?: boolean
   decision?: ValidationRecord['decision']
 }
 

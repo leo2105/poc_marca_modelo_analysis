@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react'
 import { authRequestHeaders } from '../auth/cognito'
 
 export interface SpriteSlot {
@@ -71,64 +72,21 @@ export function getLayoutSlots(width: number, height: number): SpriteSlot[] {
   return [{ index: 0, x: 0, y: 0, w: width, h: height }]
 }
 
-function isBlankRegion(data: Uint8ClampedArray, width: number, slot: SpriteSlot): boolean {
-  const { x, y, w, h } = slot
-  let sumR = 0
-  let sumG = 0
-  let sumB = 0
-  let count = 0
-  const stepX = Math.max(1, Math.floor(w / 24))
-  const stepY = Math.max(1, Math.floor(h / 24))
-
-  for (let py = y; py < y + h; py += stepY) {
-    for (let px = x; px < x + w; px += stepX) {
-      const i = (py * width + px) * 4
-      sumR += data[i]
-      sumG += data[i + 1]
-      sumB += data[i + 2]
-      count += 1
-    }
-  }
-
-  const avgR = sumR / count
-  const avgG = sumG / count
-  const avgB = sumB / count
-  let variance = 0
-  for (let py = y; py < y + h; py += stepY) {
-    for (let px = x; px < x + w; px += stepX) {
-      const i = (py * width + px) * 4
-      variance += (data[i] - avgR) ** 2 + (data[i + 1] - avgG) ** 2 + (data[i + 2] - avgB) ** 2
-    }
-  }
-  variance /= count
-
-  const minAvg = Math.min(avgR, avgG, avgB)
-  return minAvg > 240 && variance < 800
-}
-
 export function analyzeSpriteImage(
   image: HTMLImageElement,
   url: string,
   renderUrl: string,
 ): SpriteAnalysis {
-  const canvas = document.createElement('canvas')
-  canvas.width = image.naturalWidth
-  canvas.height = image.naturalHeight
-  const ctx = canvas.getContext('2d', { willReadFrequently: true })
-  if (!ctx) {
-    throw new Error('No se pudo analizar el sprite')
-  }
-  ctx.drawImage(image, 0, 0)
-  const { width, height, data } = ctx.getImageData(0, 0, canvas.width, canvas.height)
+  const width = image.naturalWidth
+  const height = image.naturalHeight
   const slots = getLayoutSlots(width, height)
-  const activeSlots = slots.filter((slot) => !isBlankRegion(data, width, slot))
   return {
     url,
     renderUrl,
     width,
     height,
     slots,
-    activeSlots: activeSlots.length > 0 ? activeSlots : slots.slice(0, 1),
+    activeSlots: slots,
   }
 }
 
@@ -178,29 +136,18 @@ export function loadSpriteAnalysis(url: string): Promise<SpriteAnalysis> {
   return promise
 }
 
+export function getVisibleSlots(analysis: SpriteAnalysis, hiddenSlotIndexes?: number[]): SpriteSlot[] {
+  const hidden = new Set(hiddenSlotIndexes ?? [])
+  return analysis.activeSlots.filter((slot) => !hidden.has(slot.index))
+}
+
 export function spriteCropStyle(
   analysis: SpriteAnalysis,
   slot: SpriteSlot,
-  mode: 'detail' | 'mosaic' = 'detail',
+  _mode: 'detail' | 'mosaic' = 'detail',
 ): SpriteCropStyle {
-  if (mode === 'mosaic') {
-    const targetHeight = 112
-    const scale = targetHeight / slot.h
-    const cellW = slot.w * scale
-    const src = analysis.renderUrl
-    return {
-      backgroundImage: `url("${src}")`,
-      backgroundSize: `${analysis.width * scale}px ${analysis.height * scale}px`,
-      backgroundPosition: `-${slot.x * scale}px -${slot.y * scale}px`,
-      backgroundRepeat: 'no-repeat',
-      width: `${cellW}px`,
-      height: `${targetHeight}px`,
-      maxWidth: 'none',
-    }
-  }
-
-  const scale = Math.min(460 / slot.w, 460 / slot.h)
   const src = analysis.renderUrl
+  const scale = Math.min(460 / slot.w, 460 / slot.h)
   return {
     backgroundImage: `url("${src}")`,
     backgroundSize: `${analysis.width * scale}px ${analysis.height * scale}px`,
@@ -209,6 +156,31 @@ export function spriteCropStyle(
     width: `${slot.w * scale}px`,
     height: `${slot.h * scale}px`,
     maxWidth: '100%',
+  }
+}
+
+const MOSAIC_CROP_PX = 96
+
+export function mosaicSlotViewport(slot: SpriteSlot) {
+  const scale = MOSAIC_CROP_PX / slot.h
+  return {
+    scale,
+    width: slot.w * scale,
+    height: MOSAIC_CROP_PX,
+  }
+}
+
+export function mosaicSheetStyle(analysis: SpriteAnalysis, slot: SpriteSlot): CSSProperties {
+  const { scale } = mosaicSlotViewport(slot)
+  return {
+    position: 'absolute',
+    width: analysis.width * scale,
+    height: analysis.height * scale,
+    left: -slot.x * scale,
+    top: -slot.y * scale,
+    backgroundImage: `url("${analysis.renderUrl}")`,
+    backgroundRepeat: 'no-repeat',
+    backgroundSize: '100% 100%',
   }
 }
 

@@ -33,5 +33,11 @@ if [[ ! -d "$SRC" ]]; then
 fi
 
 echo "→ Sync $SRC → s3://$IMGS_BUCKET/imgs/"
-aws s3 sync "$SRC" "s3://$IMGS_BUCKET/imgs/" --delete --region "$AWS_REGION"
+# No borrar imgs/races/* si no están en local (pueden copiarse desde el bucket del dashboard).
+aws s3 sync "$SRC" "s3://$IMGS_BUCKET/imgs/" --delete --region "$AWS_REGION" \
+  --exclude "races/*" --exclude "races/**"
+if [[ -d "$SRC/races" ]]; then
+  echo "→ Sync races"
+  aws s3 sync "$SRC/races" "s3://$IMGS_BUCKET/imgs/races/" --region "$AWS_REGION"
+fi
 echo "Listo."

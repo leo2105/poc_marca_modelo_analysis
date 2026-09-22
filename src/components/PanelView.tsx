@@ -1,4 +1,4 @@
-import { DEMO_TOTAL, EVENT_ID, EVENT_TITLE } from '../data/demoData'
+import type { RaceDefinition } from '../data/races'
 import { ThemeToggle } from './ThemeToggle'
 import type { ValidationRecord, ValidationSummary } from '../types'
 import { brandColor, UNKNOWN_BRAND_LABEL } from '../utils/catalog'
@@ -8,13 +8,15 @@ interface PanelViewProps {
   summary: ValidationSummary
   records: ValidationRecord[]
   displayCatalog: Record<string, string[]>
+  race: RaceDefinition
+  spriteCount: number
   darkMode: boolean
   onDarkModeChange: (value: boolean) => void
   onStartValidation: () => void
   onResetSession: () => void
 }
 
-export function PanelView({ summary, records, displayCatalog, darkMode, onDarkModeChange, onStartValidation, onResetSession }: PanelViewProps) {
+export function PanelView({ summary, records, displayCatalog, race, spriteCount, darkMode, onDarkModeChange, onStartValidation, onResetSession }: PanelViewProps) {
   const resolved = summary.total - summary.pending
   const pct = summary.total ? Math.round((resolved / summary.total) * 100) : 0
 
@@ -88,11 +90,11 @@ export function PanelView({ summary, records, displayCatalog, darkMode, onDarkMo
       <div className="evhero">
         <div className="ov" />
         <div className="txt">
-          <small>CORRIDA DE VALIDACIÓN · {EVENT_ID}</small>
-          <h3>{EVENT_TITLE}</h3>
+          <small>CORRIDA DE VALIDACIÓN · {race.eventId}</small>
+          <h3>{race.eventTitle}</h3>
           <div className="tags">
-            <span>Demo · {summary.total} de {DEMO_TOTAL.toLocaleString('es-PE')} recortes</span>
-            <span>2 cámaras · callejón de llegada</span>
+            <span>{summary.total.toLocaleString('es-PE')} de {spriteCount.toLocaleString('es-PE')} recortes</span>
+            <span>{race.location}</span>
             <span>Motor marca v1</span>
           </div>
         </div>
@@ -124,6 +126,7 @@ export function PanelView({ summary, records, displayCatalog, darkMode, onDarkMo
           <span className="tag">clasificación del motor</span>
         </div>
         {Object.entries(brandProgress)
+          .filter(([, stats]) => stats.total > 0)
           .sort(([brandA, a], [brandB, b]) => {
             if (b.total !== a.total) return b.total - a.total
             return brandA.localeCompare(brandB, 'es')

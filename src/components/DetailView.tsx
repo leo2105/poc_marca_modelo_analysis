@@ -1,10 +1,10 @@
 import { ArrowLeft } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ValidationRecord } from '../types'
 import { useSpriteAnalysis } from '../hooks/useSpriteAnalysis'
 import { brandColor } from '../utils/catalog'
-import { getClassificationChanges } from '../utils/record'
-import { getSpriteSource, spriteCropStyle } from '../utils/sprites'
+import { getClassificationChanges, isHiddenFromView } from '../utils/record'
+import { getSpriteSource, getVisibleSlots, spriteCropStyle } from '../utils/sprites'
 
 interface DetailViewProps {
   records: ValidationRecord[]
@@ -13,7 +13,9 @@ interface DetailViewProps {
   onIndexChange: (index: number) => void
   onBackToMosaic: () => void
   onApprove: (id: string) => void
-  onDiscard: (id: string) => void
+  onRemovePerspective: (id: string, slotIndex: number, remainingVisibleAfterRemove: number) => void
+  onUndo: () => void
+  canUndo: boolean
   onCorrectBrand: (id: string, brand: string) => void
   onCorrectModel: (id: string, brand: string, model: string) => void
 }
@@ -33,33 +35,106 @@ export function DetailView({
   onIndexChange,
   onBackToMosaic,
   onApprove,
-  onDiscard,
+  onRemovePerspective,
+  onUndo,
+  canUndo,
   onCorrectBrand,
   onCorrectModel,
 }: DetailViewProps) {
-  const record = records[index]
+  const visibleRecords = useMemo(() => records.filter((record) => !isHiddenFromView(record)), [records])
+  const record = records[index] && !isHiddenFromView(records[index]!) ? records[index]! : null
   const [perspectiveIndex, setPerspectiveIndex] = useState(0)
   const [brandMenuOpen, setBrandMenuOpen] = useState(false)
   const [modelMenuOpen, setModelMenuOpen] = useState(false)
   const [newBrand, setNewBrand] = useState('')
   const [newModel, setNewModel] = useState('')
 
+  const spriteSource = record ? getSpriteSource(record) : undefined
+  const { analysis, loading, error } = useSpriteAnalysis(spriteSource)
+  const visibleSlots = analysis && record ? getVisibleSlots(analysis, record.hiddenSlotIndexes) : []
+  const perspectiveCount = visibleSlots.length
+  const activePerspective = perspectiveCount > 0 ? Math.min(perspectiveIndex, perspectiveCount - 1) : 0
+  const currentSlot = visibleSlots[activePerspective]
+  const classification = record ? getClassificationChanges(record, displayCatalog) : null
+
   useEffect(() => {
     setPerspectiveIndex(0)
   }, [index, record?.personId])
 
-  if (!record) {
+  useEffect(() => {
+    if (perspectiveCount === 0) return
+    if (perspectiveIndex >= perspectiveCount) setPerspectiveIndex(perspectiveCount - 1)
+  }, [perspectiveCount, perspectiveIndex])
+
+  useEffect(() => {
+    if (record) return
+    const next = visibleRecords[0]
+    if (!next) {
+      onBackToMosaic()
+      return
+    }
+    const nextIndex = records.findIndex((item) => item.personId === next.personId)
+    if (nextIndex >= 0) onIndexChange(nextIndex)
+  }, [onBackToMosaic, onIndexChange, record, records, visibleRecords])
+
+  const moveAmongVisible = useCallback(
+    (step: number) => {
+      if (!record || visibleRecords.length === 0) return
+      const currentVisible = visibleRecords.findIndex((item) => item.personId === record.personId)
+      const base = currentVisible >= 0 ? currentVisible : 0
+      const nextVisible = visibleRecords[(base + step + visibleRecords.length) % visibleRecords.length]!
+      const nextIndex = records.findIndex((item) => item.personId === nextVisible.personId)
+      if (nextIndex >= 0) onIndexChange(nextIndex)
+    },
+    [onIndexChange, record, records, visibleRecords],
+  )
+
+  const handleRemovePerspective = useCallback(() => {
+    if (!record) return
+    if (!currentSlot) {
+      onRemovePerspective(record.personId, 0, 0)
+      return
+    }
+    const remaining = perspectiveCount - 1
+    onRemovePerspective(record.personId, currentSlot.index, remaining)
+    if (remaining <= 0) {
+      moveAmongVisible(1)
+      return
+    }
+    setPerspectiveIndex((current) => Math.min(current, remaining - 1))
+  }, [currentSlot, moveAmongVisible, onRemovePerspective, perspectiveCount, record])
+
+  useEffect(() => {
+    if (!record || !classification) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement
+      if (target.matches('input, select, textarea')) return
+      const key = event.key.toLowerCase()
+      if ((event.ctrlKey || event.metaKey) && key === 'z') {
+        event.preventDefault()
+        if (canUndo) onUndo()
+        return
+      }
+      if (key === 'a' && !classification.pendingModel) {
+        onApprove(record.personId)
+        moveAmongVisible(1)
+      }
+      if (key === 'd' || key === 'r') handleRemovePerspective()
+      if (event.key === 'ArrowRight') moveAmongVisible(1)
+      if (event.key === 'ArrowLeft') moveAmongVisible(-1)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [canUndo, classification, handleRemovePerspective, moveAmongVisible, onApprove, onUndo, record])
+
+  if (!record || !classification) {
     return <section className="view active"><div className="empty-state">No hay recortes para revisar.</div></section>
   }
 
-  const move = (step: number) => onIndexChange((index + step + records.length) % records.length)
-  const spriteSource = getSpriteSource(record)
-  const { analysis, loading, error } = useSpriteAnalysis(spriteSource)
-  const perspectiveCount = analysis?.activeSlots.length ?? 0
-  const framesUsed = loading ? '—' : Math.max(perspectiveCount, 1)
-  const activePerspective = perspectiveCount > 0 ? Math.min(perspectiveIndex, perspectiveCount - 1) : 0
-  const { effective, brandChanged, modelChanged, corrected, pendingModel } = getClassificationChanges(record, displayCatalog)
+  const { effective, brandChanged, modelChanged, corrected, pendingModel } = classification
   const stateLabel = pendingModel ? 'Pendiente modelo' : STATE_LABEL[record.state]
+  const framesUsed = loading ? '—' : Math.max(perspectiveCount, 1)
+  const visibleOrdinal = Math.max(1, visibleRecords.findIndex((item) => item.personId === record.personId) + 1)
 
   return (
     <section className="view active">
@@ -71,28 +146,40 @@ export function DetailView({
           </button>
           <h2>Validación · detalle</h2>
         </div>
-        <div className="top-actions"><span>Recorte {index + 1} de {records.length}</span></div>
+        <div className="top-actions">
+          <span>
+            Recorte {visibleOrdinal} de {visibleRecords.length}
+          </span>
+        </div>
       </div>
 
       <div className="detail-wrap">
         <div className="detail-visual">
           <div className="detail-img">
-            <button type="button" className="navb prev" onClick={() => move(-1)}>‹</button>
+            <button type="button" className="navb prev" onClick={() => moveAmongVisible(-1)}>‹</button>
             <div className="detail-img-frame">
               {loading ? (
                 <div className="sprite-crop loading detail-sprite" aria-label="Cargando perspectivas" />
-              ) : analysis && analysis.activeSlots.length > 0 ? (
+              ) : analysis && currentSlot ? (
                 <div
                   className="sprite-crop detail-sprite"
-                  style={spriteCropStyle(analysis, analysis.activeSlots[activePerspective])}
+                  style={spriteCropStyle(analysis, currentSlot)}
                   role="img"
-                  aria-label={`Perspectiva ${activePerspective + 1} de ${analysis.activeSlots.length}`}
+                  aria-label={`Perspectiva ${activePerspective + 1} de ${perspectiveCount}`}
                 />
               ) : (
                 <img src={spriteSource} alt="" className="detail-sprite-fallback" title={error ?? undefined} />
               )}
             </div>
-            <button type="button" className="navb next" onClick={() => move(1)}>›</button>
+            <button type="button" className="navb next" onClick={() => moveAmongVisible(1)}>›</button>
+            <button
+              type="button"
+              className="vbtn detail-remove-crop"
+              onClick={handleRemovePerspective}
+              title={perspectiveCount <= 1 ? 'Elimina el recorte del mosaico y del dashboard' : 'Quita esta vista; deja de mostrarse y no se carga'}
+            >
+              ⌀ Eliminar recorte <kbd>D</kbd>
+            </button>
           </div>
           {!loading && perspectiveCount > 1 && (
             <div className="perspective-dots" role="tablist" aria-label="Perspectivas de la zapatilla">
@@ -197,7 +284,7 @@ export function DetailView({
           )}
 
           <div className="dactions">
-            <button className="vbtn ok" disabled={pendingModel} onClick={() => { onApprove(record.personId); move(1) }}>✓ Aprobar clasificación <kbd>A</kbd></button>
+            <button className="vbtn ok" disabled={pendingModel} onClick={() => { onApprove(record.personId); moveAmongVisible(1) }}>✓ Aprobar clasificación <kbd>A</kbd></button>
             <div className={`menu full ${brandMenuOpen ? 'open' : ''}`}>
               <button className="vbtn dark full" onClick={() => { setBrandMenuOpen((v) => !v); setModelMenuOpen(false) }}>↺ Corregir marca ▾</button>
               <div className="menu-pop left">
@@ -240,12 +327,11 @@ export function DetailView({
                 </div>
               </div>
             </div>
-            <div className="detail-split">
-              <button className="vbtn" onClick={() => { onDiscard(record.personId); move(1) }}>⌀ Descartar <kbd>D</kbd></button>
-            </div>
           </div>
 
-          <div className="note">Atajos: <b>A</b> aprobar · <b>D</b> descartar · <b>← →</b> navegar. Cada decisión queda registrada en el log de auditoría.</div>
+          <div className="note">
+            Atajos: <b>A</b> aprobar · <b>D</b> eliminar recorte (quita la vista actual; si es la única, elimina el recorte) · <b>Ctrl+Z</b> deshacer · <b>← →</b> navegar.
+          </div>
         </div>
       </div>
     </section>

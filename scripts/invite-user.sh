@@ -5,6 +5,10 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
+if [[ -f "$ROOT/scripts/fix-crlf.pl" ]] && command -v perl >/dev/null; then
+  perl "$ROOT/scripts/fix-crlf.pl" >/dev/null 2>&1 || true
+fi
+
 if [[ -f .env ]]; then
   set -a
   # shellcheck disable=SC1091

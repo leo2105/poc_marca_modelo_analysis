@@ -1,32 +1,17 @@
 import type { ValidationRecord, ValidationRun } from '../types'
 import { normalizeBrandLabel, normalizeModelLabel, UNKNOWN_BRAND_LABEL, UNKNOWN_MODEL_LABEL } from '../utils/catalog'
-import { SPRITE_ANNOTATIONS } from './spriteAnnotations'
-import { DEMO_SPRITE_COUNT, SPRITE_FILES, spriteUrl } from './spriteManifest'
+import { HOMENAJE_ASSETS, type RaceAssets } from './raceAssets'
+import { DEFAULT_EVENT_ID, getRace, raceValidationRun, type RaceDefinition } from './races'
 
-export const DEMO_TOTAL = DEMO_SPRITE_COUNT
-export const DEMO_RECORD_COUNT = DEMO_SPRITE_COUNT
-
-export const EVENT_ID = 'carrera-homenaje-fiestas-patria'
-export const EVENT_TITLE = 'Carrera Homenaje Fiestas Patrias'
-/** Incrementar al cambiar de experimento o forzar arranque en cero. */
-export const VALIDATION_SESSION_EPOCH = '2026-08-04-images'
-
-export const validationRun: ValidationRun = {
-  schemaVersion: '1.0',
-  eventId: EVENT_ID,
-  runId: 'val-20260804T1800-b7f2',
-  sourceRunId: 'carrera_homenaje_fiestas_patria_sam3_yoloworld-onnx_pose-onnx_clip-vit-l14_384',
-  catalogVersion: 'catalog-2026.03',
-  published: false,
-  actor: 'ops:leon',
-}
+export const EVENT_ID = DEFAULT_EVENT_ID
+export const EVENT_TITLE = getRace(DEFAULT_EVENT_ID).eventTitle
+export const VALIDATION_SESSION_EPOCH = getRace(DEFAULT_EVENT_ID).sessionEpoch
+export const DEMO_TOTAL = HOMENAJE_ASSETS.spriteFiles.length
+export const DEMO_RECORD_COUNT = DEMO_TOTAL
+export const validationRun: ValidationRun = raceValidationRun(getRace(DEFAULT_EVENT_ID))
 
 function personKeyFromFilename(filename: string): string {
   return filename.replace(/\.jpg$/i, '')
-}
-
-function getAnnotation(filename: string) {
-  return SPRITE_ANNOTATIONS[personKeyFromFilename(filename)]
 }
 
 function sanitizeDetected(detected: { brand: string; model: string }) {
@@ -36,21 +21,24 @@ function sanitizeDetected(detected: { brand: string; model: string }) {
   }
 }
 
-export function createDemoRecords(): ValidationRecord[] {
+export function createRecordsForRace(race: RaceDefinition, assets: RaceAssets): ValidationRecord[] {
   const records: ValidationRecord[] = []
-  const spriteSample = SPRITE_FILES.slice(0, DEMO_RECORD_COUNT)
+  const spriteSample = assets.spriteFiles
 
   for (let i = 0; i < spriteSample.length; i += 1) {
-    const sprite = spriteUrl(spriteSample[i])
-    const annotation = getAnnotation(spriteSample[i])
+    const filename = spriteSample[i]!
+    const sprite = `${race.spritePrefix}/${filename}`
+    const annotation = assets.annotations[personKeyFromFilename(filename)]
     const brand = annotation ? normalizeBrandLabel(annotation.brand) : UNKNOWN_BRAND_LABEL
     const model = annotation ? normalizeModelLabel(annotation.model) : UNKNOWN_MODEL_LABEL
-    const confidence = annotation ? Number(annotation.score.toFixed(2)) : 0
-    const personNum = spriteSample[i].match(/person_(\d+)/)?.[1] ?? String(i + 1).padStart(6, '0')
+    const confidence = typeof annotation?.score === 'number' && Number.isFinite(annotation.score)
+      ? Number(annotation.score.toFixed(2))
+      : 0
+    const personNum = filename.match(/person_(\d+)/)?.[1] ?? String(i + 1).padStart(6, '0')
 
     records.push({
       personId: `P-${personNum}`,
-      cropKey: `events/${EVENT_ID}/crops/person_${personNum}.jpg`,
+      cropKey: `events/${race.eventId}/crops/person_${personNum}.jpg`,
       spriteUrl: sprite,
       image: sprite,
       perspectives: [sprite],
@@ -67,4 +55,8 @@ export function createDemoRecords(): ValidationRecord[] {
   }
 
   return records
+}
+
+export function createDemoRecords(): ValidationRecord[] {
+  return createRecordsForRace(getRace(DEFAULT_EVENT_ID), HOMENAJE_ASSETS)
 }

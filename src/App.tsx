@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { Component, useCallback, useEffect, useRef, useState } from 'react'
+import type { ErrorInfo, ReactNode } from 'react'
 import { useAuth } from './auth/AuthGate'
 import { DetailView } from './components/DetailView'
 import { MosaicView } from './components/MosaicView'
@@ -6,8 +7,30 @@ import { PanelView } from './components/PanelView'
 import { PublishView } from './components/PublishView'
 import { Sidebar } from './components/Sidebar'
 import { useValidationStore } from './hooks/useValidationStore'
-import { isPendingModel } from './utils/record'
 import type { MosaicUiState, ValidationView } from './types'
+
+export class AppErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
+  state = { error: null as Error | null }
+
+  static getDerivedStateFromError(error: Error) {
+    return { error }
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error(error, info)
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="race-loading">
+          No se pudo mostrar esta carrera. Recargá la página o volvé a Homenaje.
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
 
 function App() {
   const store = useValidationStore()
@@ -26,9 +49,14 @@ function App() {
   }, [darkMode])
 
   useEffect(() => {
-    if (!auth?.session || !store.remoteSessionEnabled) return
+    mosaicUiRef.current = null
+    setMosaicReady(false)
+  }, [store.eventId])
+
+  useEffect(() => {
+    if (!auth?.session || !store.remoteSessionEnabled || store.raceLoading) return
     void store.loadRemoteSession()
-  }, [auth?.session, store.loadRemoteSession, store.remoteSessionEnabled])
+  }, [auth?.session, store.eventId, store.raceLoading, store.loadRemoteSession, store.remoteSessionEnabled])
 
   useEffect(() => {
     if (!store.sessionDirty) return
@@ -39,23 +67,25 @@ function App() {
     return () => window.removeEventListener('beforeunload', onBeforeUnload)
   }, [store.sessionDirty])
 
+  const saveSessionRef = useRef(store.saveRemoteSession)
+  saveSessionRef.current = store.saveRemoteSession
+  const sessionDirtyRef = useRef(store.sessionDirty)
+  sessionDirtyRef.current = store.sessionDirty
+  const raceLoadingRef = useRef(store.raceLoading)
+  raceLoadingRef.current = store.raceLoading
+  const sessionSaveStateRef = useRef(store.sessionSaveState)
+  sessionSaveStateRef.current = store.sessionSaveState
+
   useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement
-      if (target.matches('input, select, textarea')) return
-      if (view !== 'detail') return
-      const record = store.records[store.detailIndex]
-      if (!record) return
-      const key = event.key.toLowerCase()
-      const pendingModel = isPendingModel(record, store.displayCatalog)
-      if (key === 'a' && !pendingModel) { store.approveRecords([record.personId], 'individual'); store.setDetailIndex((store.detailIndex + 1) % store.records.length) }
-      if (key === 'd' || key === 'r') { store.discardRecords([record.personId], 'individual'); store.setDetailIndex((store.detailIndex + 1) % store.records.length) }
-      if (event.key === 'ArrowRight') store.setDetailIndex((store.detailIndex + 1) % store.records.length)
-      if (event.key === 'ArrowLeft') store.setDetailIndex((store.detailIndex - 1 + store.records.length) % store.records.length)
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [store, view])
+    if (!auth?.session || !store.remoteSessionEnabled) return
+    const id = window.setInterval(() => {
+      if (!sessionDirtyRef.current) return
+      if (raceLoadingRef.current) return
+      if (sessionSaveStateRef.current === 'saving') return
+      void saveSessionRef.current(mosaicUiRef.current).catch(() => undefined)
+    }, 5 * 60 * 1000)
+    return () => window.clearInterval(id)
+  }, [auth?.session, store.remoteSessionEnabled])
 
   const navigate = (next: ValidationView, options?: { preserveScroll?: boolean }) => {
     setView(next)
@@ -90,22 +120,43 @@ function App() {
 
   return (
     <div className="app">
-      <Sidebar activeView={view} pending={store.summary.pending} onNavigate={handleSidebarNavigate} />
+      <Sidebar
+        activeView={view}
+        pending={store.summary.pending}
+        race={store.race}
+        races={store.races}
+        raceLoading={store.raceLoading}
+        onSelectEvent={(eventId) => { void store.selectEvent(eventId) }}
+        onNavigate={handleSidebarNavigate}
+      />
       <main className="main">
-        {view === 'panel' && (
+        {store.raceError && (
+          <div className="mvp-banner">
+            <span className="admin-tag">ERROR</span>
+            <span>{store.raceError}</span>
+          </div>
+        )}
+        {store.raceLoading && (
+          <div className="race-loading">Cargando carrera…</div>
+        )}
+        <AppErrorBoundary key={store.eventId}>
+        {view === 'panel' && !store.raceLoading && (
           <PanelView
             summary={store.summary}
             records={store.records}
             displayCatalog={store.displayCatalog}
+            race={store.race}
+            spriteCount={store.spriteCount}
             darkMode={darkMode}
             onDarkModeChange={setDarkMode}
             onStartValidation={() => navigate('mosaic')}
             onResetSession={store.resetSession}
           />
         )}
-        {(view === 'mosaic' || mosaicReady) && (
+        {(view === 'mosaic' || mosaicReady) && !store.raceLoading && (
           <div hidden={view !== 'mosaic'}>
             <MosaicView
+              key={store.eventId}
               records={store.records}
               displayCatalog={store.displayCatalog}
               persistedUi={store.loadedMosaicUi ?? mosaicUiRef.current}
@@ -115,7 +166,7 @@ function App() {
               canUndo={store.canUndo}
               onUndo={store.undoLastAction}
               onApprove={(ids) => store.approveRecords(ids)}
-              onDiscard={(ids) => store.discardRecords(ids)}
+              onHideCrops={(ids) => store.hideCrops(ids)}
               onCorrectBrand={(ids, brand) => store.correctBrand(ids, brand)}
               onCorrectModel={(ids, brand, model) => store.correctModel(ids, brand, model)}
               onOpenDetail={(index) => {
@@ -131,20 +182,25 @@ function App() {
             />
           </div>
         )}
-        {view === 'detail' && (
+        {view === 'detail' && !store.raceLoading && store.records.length > 0 && (
           <DetailView
+            key={store.eventId}
             records={store.records}
             index={store.detailIndex}
             displayCatalog={store.displayCatalog}
             onIndexChange={store.setDetailIndex}
             onBackToMosaic={goToMosaic}
             onApprove={(id) => store.approveRecords([id], 'individual')}
-            onDiscard={(id) => store.discardRecords([id], 'individual')}
+            onRemovePerspective={(id, slotIndex, remaining) =>
+              store.removePerspective(id, slotIndex, remaining, 'individual')
+            }
+            onUndo={store.undoLastAction}
+            canUndo={store.canUndo}
             onCorrectBrand={(id, brand) => store.correctBrand([id], brand, 'individual')}
             onCorrectModel={(id, brand, model) => store.correctModel([id], brand, model, 'individual')}
           />
         )}
-        {view === 'publish' && (
+        {view === 'publish' && !store.raceLoading && (
           <PublishView
             summary={store.summary}
             published={store.published}
@@ -155,6 +211,7 @@ function App() {
             }}
           />
         )}
+        </AppErrorBoundary>
       </main>
     </div>
   )

@@ -5,6 +5,10 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
+if [[ -f "$ROOT/scripts/fix-crlf.pl" ]] && command -v perl >/dev/null; then
+  perl "$ROOT/scripts/fix-crlf.pl" >/dev/null 2>&1 || true
+fi
+
 if [[ -f .env ]]; then
   set -a
   # shellcheck disable=SC1091
@@ -16,8 +20,12 @@ STACK_NAME="${STACK_NAME:-len-validation}"
 PROJECT_NAME="${PROJECT_NAME:-len-validation}"
 AWS_REGION="${AWS_REGION:-us-east-1}"
 COGNITO_DOMAIN_PREFIX="${COGNITO_DOMAIN_PREFIX:-}"
+DASHBOARD_STACK="${DASHBOARD_STACK:-len-shoes-dashboard}"
+DASHBOARD_JWT_AUDIENCE="${DASHBOARD_JWT_AUDIENCE:-}"
+DASHBOARD_ORIGIN="${DASHBOARD_ORIGIN:-}"
 SKIP_INFRA="${SKIP_INFRA:-false}"
 ATTACH_EDGE="${ATTACH_EDGE:-true}"
+SKIP_IMGS="${SKIP_IMGS:-false}"
 
 need() { command -v "$1" >/dev/null || { echo "Falta $1"; exit 1; }; }
 need aws
@@ -30,6 +38,25 @@ cf_out() {
     --region "$AWS_REGION" \
     --query "Stacks[0].Outputs[?OutputKey=='$1'].OutputValue" \
     --output text
+}
+
+cf_out_stack() {
+  aws cloudformation describe-stacks \
+    --stack-name "$1" \
+    --region "$AWS_REGION" \
+    --query "Stacks[0].Outputs[?OutputKey=='$2'].OutputValue" \
+    --output text 2>/dev/null || true
+}
+
+resolve_dashboard_access() {
+  if [[ -z "$DASHBOARD_JWT_AUDIENCE" || "$DASHBOARD_JWT_AUDIENCE" == "None" ]]; then
+    DASHBOARD_JWT_AUDIENCE="$(cf_out_stack "$DASHBOARD_STACK" UserPoolClientId)"
+  fi
+  if [[ -z "$DASHBOARD_ORIGIN" || "$DASHBOARD_ORIGIN" == "None" ]]; then
+    DASHBOARD_ORIGIN="$(cf_out_stack "$DASHBOARD_STACK" CloudFrontUrl)"
+  fi
+  if [[ "$DASHBOARD_JWT_AUDIENCE" == "None" ]]; then DASHBOARD_JWT_AUDIENCE=""; fi
+  if [[ "$DASHBOARD_ORIGIN" == "None" ]]; then DASHBOARD_ORIGIN=""; fi
 }
 
 stack_status() {
@@ -72,13 +99,24 @@ if [[ "$SKIP_INFRA" != "true" ]]; then
     exit 1
   fi
   wait_for_stack_ready
+  resolve_dashboard_access
   echo "→ CloudFormation stack $STACK_NAME"
+  PARAM_OVERRIDES=(
+    "ProjectName=$PROJECT_NAME"
+    "CognitoDomainPrefix=$COGNITO_DOMAIN_PREFIX"
+  )
+  if [[ -n "$DASHBOARD_JWT_AUDIENCE" ]]; then
+    echo "→ Dashboard JWT audience: $DASHBOARD_JWT_AUDIENCE"
+    PARAM_OVERRIDES+=("DashboardJwtAudience=$DASHBOARD_JWT_AUDIENCE")
+  fi
+  if [[ -n "$DASHBOARD_ORIGIN" ]]; then
+    echo "→ Dashboard CORS origin: $DASHBOARD_ORIGIN"
+    PARAM_OVERRIDES+=("DashboardOrigin=$DASHBOARD_ORIGIN")
+  fi
   aws cloudformation deploy \
     --template-file infra/cloudformation.yml \
     --stack-name "$STACK_NAME" \
-    --parameter-overrides \
-      "ProjectName=$PROJECT_NAME" \
-      "CognitoDomainPrefix=$COGNITO_DOMAIN_PREFIX" \
+    --parameter-overrides "${PARAM_OVERRIDES[@]}" \
     --capabilities CAPABILITY_NAMED_IAM \
     --region "$AWS_REGION"
 fi
@@ -148,9 +186,11 @@ echo "→ Sync app → s3://$APP_BUCKET/"
 aws s3 sync dist/ "s3://$APP_BUCKET/" --delete --region "$AWS_REGION" \
   --exclude "imgs/*" --exclude "imgs/**"
 
-if [[ -d public/imgs ]]; then
+if [[ "$SKIP_IMGS" != "true" && -d public/imgs ]]; then
   echo "→ Sync imgs"
   IMGS_BUCKET="$IMGS_BUCKET" STACK_NAME="$STACK_NAME" AWS_REGION="$AWS_REGION" bash scripts/sync-imgs.sh
+elif [[ "$SKIP_IMGS" == "true" ]]; then
+  echo "→ Skip sync de imágenes (SKIP_IMGS=true)"
 else
   echo "⚠ public/imgs no existe — omite sync de sprites"
 fi

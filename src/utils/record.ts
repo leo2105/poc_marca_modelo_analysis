@@ -1,4 +1,5 @@
 import type { ValidationRecord, ValidationState } from '../types'
+import { displayModelName } from './catalog'
 
 export type MosaicDisplayState = ValidationState | 'pending-model'
 
@@ -18,7 +19,7 @@ export function isModelInCatalog(
   model: string,
   displayCatalog: Record<string, string[]>,
 ): boolean {
-  return (displayCatalog[brand] ?? []).includes(model)
+  return (displayCatalog[brand] ?? []).some((label) => displayModelName(label) === displayModelName(model))
 }
 
 /** Marca reasignada y el modelo actual no pertenece al catálogo de esa marca. */
@@ -95,6 +96,15 @@ export function withPendingModelState(
 
 export function isPanelDiscarded(record: ValidationRecord, displayCatalog: Record<string, string[]>): boolean {
   return getPanelBucket(record, displayCatalog) === 'discarded'
+}
+
+export function isHiddenFromView(record: ValidationRecord): boolean {
+  return Boolean(record.hiddenFromView)
+}
+
+export function isDiscardedRecord(record: ValidationRecord): boolean {
+  const state = record.state === 'rejected' ? 'discarded' : record.state
+  return state === 'discarded' || isHiddenFromView(record)
 }
 
 export function isPanelApproved(record: ValidationRecord, displayCatalog: Record<string, string[]>): boolean {

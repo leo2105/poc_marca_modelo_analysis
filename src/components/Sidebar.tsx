@@ -1,15 +1,28 @@
 import type { ValidationView } from '../types'
-import { EVENT_ID } from '../data/demoData'
+import type { RaceDefinition } from '../data/races'
 import { useAuth } from '../auth/AuthGate'
 import { getCognitoConfig } from '../auth/cognito'
+import { RaceSelect } from './RaceSelect'
 
 interface SidebarProps {
   activeView: ValidationView
   pending: number
+  race: RaceDefinition
+  races: RaceDefinition[]
+  raceLoading?: boolean
+  onSelectEvent: (eventId: string) => void
   onNavigate: (view: ValidationView) => void
 }
 
-export function Sidebar({ activeView, pending, onNavigate }: SidebarProps) {
+export function Sidebar({
+  activeView,
+  pending,
+  race,
+  races,
+  raceLoading = false,
+  onSelectEvent,
+  onNavigate,
+}: SidebarProps) {
   const auth = useAuth()
   const cognitoEnabled = getCognitoConfig().enabled
   const email = auth?.session.email
@@ -19,6 +32,16 @@ export function Sidebar({ activeView, pending, onNavigate }: SidebarProps) {
       <div className="logo">
         <img src="/len-logo.png" alt="LEN" className="logo-img" />
         <span>CONSOLA ADMIN · VALIDACIÓN</span>
+      </div>
+      <div className="nav-label">CARRERA</div>
+      <div className="race-select-wrap">
+        <RaceSelect
+          id="sidebar-race-select"
+          races={races}
+          value={race.eventId}
+          disabled={raceLoading}
+          onChange={onSelectEvent}
+        />
       </div>
       <div className="nav-label">CORRIDA</div>
       <nav className="nav">
@@ -52,7 +75,6 @@ export function Sidebar({ activeView, pending, onNavigate }: SidebarProps) {
             Cerrar sesión
           </button>
         )}
-        <div className="ds">Corrida <span className="mono">{EVENT_ID}</span><br />Motor <span className="mono">marca v1</span></div>
       </div>
     </aside>
   )
