@@ -51,6 +51,8 @@ export function DetailView({
   const [modelMenuOpen, setModelMenuOpen] = useState(false)
   const [newBrand, setNewBrand] = useState('')
   const [newModel, setNewModel] = useState('')
+  const [brandQuery, setBrandQuery] = useState('')
+  const [modelQuery, setModelQuery] = useState('')
 
   const spriteSource = record ? getSpriteSource(record) : undefined
   const { analysis, loading, error } = useSpriteAnalysis(spriteSource)
@@ -59,9 +61,24 @@ export function DetailView({
   const activePerspective = perspectiveCount > 0 ? Math.min(perspectiveIndex, perspectiveCount - 1) : 0
   const currentSlot = visibleSlots[activePerspective]
   const classification = record ? getClassificationChanges(record, displayCatalog) : null
+  const brandOptions = useMemo(() => {
+    const query = brandQuery.trim().toLocaleLowerCase('es')
+    return Object.keys(displayCatalog)
+      .filter((brand) => !query || brand.toLocaleLowerCase('es').includes(query))
+      .sort((a, b) => a.localeCompare(b, 'es'))
+  }, [brandQuery, displayCatalog])
+  const modelOptions = useMemo(() => {
+    const query = modelQuery.trim().toLocaleLowerCase('es')
+    const models = displayCatalog[classification?.effective.brand ?? ''] ?? []
+    return models.filter((model) => !query || model.toLocaleLowerCase('es').includes(query))
+  }, [classification?.effective.brand, displayCatalog, modelQuery])
 
   useEffect(() => {
     setPerspectiveIndex(0)
+    setBrandQuery('')
+    setModelQuery('')
+    setBrandMenuOpen(false)
+    setModelMenuOpen(false)
   }, [index, record?.personId])
 
   useEffect(() => {
@@ -316,14 +333,26 @@ export function DetailView({
           <div className="dactions">
             <button className="vbtn ok" disabled={pendingModel} onClick={() => { onApprove(record.personId); moveAmongVisible(1) }}>✓ Aprobar clasificación <kbd>A</kbd></button>
             <div className={`menu full ${brandMenuOpen ? 'open' : ''}`}>
-              <button className="vbtn dark full" onClick={() => { setBrandMenuOpen((v) => !v); setModelMenuOpen(false) }}>↺ Corregir marca ▾</button>
-              <div className="menu-pop left">
-                <div className="menu-lab">MARCAS</div>
-                {Object.keys(displayCatalog).map((brand) => (
-                  <button key={brand} onClick={() => { onCorrectBrand(record.personId, brand); setBrandMenuOpen(false) }}>
-                    <span className="bdot" style={{ background: brandColor(brand) }} />{brand}
-                  </button>
-                ))}
+              <button className="vbtn dark full" onClick={() => { setBrandMenuOpen((v) => !v); setBrandQuery(''); setModelMenuOpen(false) }}>↺ Corregir marca ▾</button>
+              {brandMenuOpen && <div className="menu-pop left catalog-menu">
+                <input
+                  type="text"
+                  className="menu-search"
+                  value={brandQuery}
+                  onChange={(e) => setBrandQuery(e.target.value)}
+                  onClick={(e) => e.stopPropagation()}
+                  placeholder="Buscar marca…"
+                  aria-label="Buscar marca"
+                  autoFocus
+                />
+                <div className="menu-list">
+                  {brandOptions.map((brand) => (
+                    <button key={brand} onClick={() => { onCorrectBrand(record.personId, brand); setBrandQuery(''); setBrandMenuOpen(false) }}>
+                      <span className="bdot" style={{ background: brandColor(brand) }} />{brand}
+                    </button>
+                  ))}
+                  {brandOptions.length === 0 && <div className="menu-lab">Sin coincidencias</div>}
+                </div>
                 <div className="menu-new">
                   <input
                     type="text"
@@ -332,19 +361,32 @@ export function DetailView({
                     onClick={(e) => e.stopPropagation()}
                     placeholder="Nueva marca…"
                   />
-                  <button type="button" className="add" onClick={(e) => { e.stopPropagation(); if (newBrand.trim()) { onCorrectBrand(record.personId, newBrand.trim()); setNewBrand(''); setBrandMenuOpen(false) } }}>＋</button>
+                  <button type="button" className="add" onClick={(e) => { e.stopPropagation(); if (newBrand.trim()) { onCorrectBrand(record.personId, newBrand.trim()); setNewBrand(''); setBrandQuery(''); setBrandMenuOpen(false) } }}>＋</button>
                 </div>
-              </div>
+              </div>}
             </div>
             <div className={`menu full ${modelMenuOpen ? 'open' : ''}`}>
-              <button className="vbtn full" onClick={() => { setModelMenuOpen((v) => !v); setBrandMenuOpen(false) }}>↺ Corregir modelo ▾</button>
-              <div className="menu-pop left">
-                <div className="menu-lab">MODELOS · {effective.brand}</div>
-                {(displayCatalog[effective.brand] ?? []).map((model) => (
-                  <button key={model} onClick={() => { onCorrectModel(record.personId, effective.brand, model); setModelMenuOpen(false) }}>
-                    {model}
-                  </button>
-                ))}
+              <button className="vbtn full" onClick={() => { setModelMenuOpen((v) => !v); setModelQuery(''); setBrandMenuOpen(false) }}>↺ Corregir modelo ▾</button>
+              {modelMenuOpen && <div className="menu-pop left catalog-menu">
+                <input
+                  type="text"
+                  className="menu-search"
+                  value={modelQuery}
+                  onChange={(e) => setModelQuery(e.target.value)}
+                  onClick={(e) => e.stopPropagation()}
+                  placeholder="Buscar modelo…"
+                  aria-label="Buscar modelo"
+                  autoFocus
+                />
+                <div className="menu-list">
+                  <div className="menu-lab">MODELOS · {effective.brand}</div>
+                  {modelOptions.map((model) => (
+                    <button key={model} onClick={() => { onCorrectModel(record.personId, effective.brand, model); setModelQuery(''); setModelMenuOpen(false) }}>
+                      {model}
+                    </button>
+                  ))}
+                  {modelOptions.length === 0 && <div className="menu-lab">Sin coincidencias</div>}
+                </div>
                 <div className="menu-new">
                   <input
                     type="text"
@@ -353,9 +395,9 @@ export function DetailView({
                     onClick={(e) => e.stopPropagation()}
                     placeholder="Nuevo modelo…"
                   />
-                  <button type="button" className="add" onClick={(e) => { e.stopPropagation(); if (newModel.trim()) { onCorrectModel(record.personId, effective.brand, newModel.trim()); setNewModel(''); setModelMenuOpen(false) } }}>＋</button>
+                  <button type="button" className="add" onClick={(e) => { e.stopPropagation(); if (newModel.trim()) { onCorrectModel(record.personId, effective.brand, newModel.trim()); setNewModel(''); setModelQuery(''); setModelMenuOpen(false) } }}>＋</button>
                 </div>
-              </div>
+              </div>}
             </div>
           </div>
 
