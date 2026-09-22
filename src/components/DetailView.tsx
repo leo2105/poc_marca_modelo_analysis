@@ -10,6 +10,8 @@ interface DetailViewProps {
   records: ValidationRecord[]
   index: number
   displayCatalog: Record<string, string[]>
+  /** Orden de recortes tal como se ve en el mosaico. */
+  navigationIds?: string[] | null
   onIndexChange: (index: number) => void
   onBackToMosaic: () => void
   onApprove: (id: string) => void
@@ -32,6 +34,7 @@ export function DetailView({
   records,
   index,
   displayCatalog,
+  navigationIds,
   onIndexChange,
   onBackToMosaic,
   onApprove,
@@ -77,17 +80,34 @@ export function DetailView({
     if (nextIndex >= 0) onIndexChange(nextIndex)
   }, [onBackToMosaic, onIndexChange, record, records, visibleRecords])
 
+  const navigationQueue = useMemo(() => {
+    const allowed = new Set(visibleRecords.map((item) => item.personId))
+    if (navigationIds?.length) {
+      const queued = navigationIds.filter((id) => allowed.has(id))
+      if (queued.length) return queued
+    }
+    return visibleRecords.map((item) => item.personId)
+  }, [navigationIds, visibleRecords])
+
   const moveAmongVisible = useCallback(
     (step: number) => {
-      if (!record || visibleRecords.length === 0) return
-      const currentVisible = visibleRecords.findIndex((item) => item.personId === record.personId)
+      if (!record || navigationQueue.length === 0) return
+      const currentVisible = navigationQueue.indexOf(record.personId)
       const base = currentVisible >= 0 ? currentVisible : 0
-      const nextVisible = visibleRecords[(base + step + visibleRecords.length) % visibleRecords.length]!
-      const nextIndex = records.findIndex((item) => item.personId === nextVisible.personId)
+      const nextId = navigationQueue[(base + step + navigationQueue.length) % navigationQueue.length]!
+      const nextIndex = records.findIndex((item) => item.personId === nextId)
       if (nextIndex >= 0) onIndexChange(nextIndex)
     },
-    [onIndexChange, record, records, visibleRecords],
+    [navigationQueue, onIndexChange, record, records],
   )
+
+  const cyclePerspective = useCallback((step: number) => {
+    if (perspectiveCount <= 1) return
+    setPerspectiveIndex((current) => {
+      const safe = Math.min(current, perspectiveCount - 1)
+      return (safe + step + perspectiveCount) % perspectiveCount
+    })
+  }, [perspectiveCount])
 
   const handleRemovePerspective = useCallback(() => {
     if (!record) return
@@ -120,12 +140,12 @@ export function DetailView({
         moveAmongVisible(1)
       }
       if (key === 'd' || key === 'r') handleRemovePerspective()
-      if (event.key === 'ArrowRight') moveAmongVisible(1)
-      if (event.key === 'ArrowLeft') moveAmongVisible(-1)
+      if (event.key === 'ArrowRight') cyclePerspective(1)
+      if (event.key === 'ArrowLeft') cyclePerspective(-1)
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [canUndo, classification, handleRemovePerspective, moveAmongVisible, onApprove, onUndo, record])
+  }, [canUndo, classification, cyclePerspective, handleRemovePerspective, moveAmongVisible, onApprove, onUndo, record])
 
   if (!record || !classification) {
     return <section className="view active"><div className="empty-state">No hay recortes para revisar.</div></section>
@@ -156,7 +176,7 @@ export function DetailView({
       <div className="detail-wrap">
         <div className="detail-visual">
           <div className="detail-img">
-            <button type="button" className="navb prev" onClick={() => moveAmongVisible(-1)}>‹</button>
+            <button type="button" className="navb prev" aria-label="Vista anterior" disabled={perspectiveCount <= 1} onClick={() => cyclePerspective(-1)}>‹</button>
             <div className="detail-img-frame">
               {loading ? (
                 <div className="sprite-crop loading detail-sprite" aria-label="Cargando perspectivas" />
@@ -171,7 +191,7 @@ export function DetailView({
                 <img src={spriteSource} alt="" className="detail-sprite-fallback" title={error ?? undefined} />
               )}
             </div>
-            <button type="button" className="navb next" onClick={() => moveAmongVisible(1)}>›</button>
+            <button type="button" className="navb next" aria-label="Vista siguiente" disabled={perspectiveCount <= 1} onClick={() => cyclePerspective(1)}>›</button>
             <button
               type="button"
               className="vbtn detail-remove-crop"
@@ -181,21 +201,31 @@ export function DetailView({
               ⌀ Eliminar recorte <kbd>D</kbd>
             </button>
           </div>
-          {!loading && perspectiveCount > 1 && (
-            <div className="perspective-dots" role="tablist" aria-label="Perspectivas de la zapatilla">
-              {Array.from({ length: perspectiveCount }, (_, dotIndex) => (
-                <button
-                  key={dotIndex}
-                  type="button"
-                  role="tab"
-                  aria-selected={dotIndex === activePerspective}
-                  aria-label={`Perspectiva ${dotIndex + 1}`}
-                  className={`perspective-dot ${dotIndex === activePerspective ? 'active' : ''}`}
-                  onClick={() => setPerspectiveIndex(dotIndex)}
-                />
-              ))}
-            </div>
-          )}
+          <div className="detail-pager">
+            <button type="button" className="detail-pager-btn" onClick={() => moveAmongVisible(-1)}>
+              Anterior
+            </button>
+            {!loading && perspectiveCount > 1 ? (
+              <div className="perspective-dots" role="tablist" aria-label="Perspectivas de la zapatilla">
+                {Array.from({ length: perspectiveCount }, (_, dotIndex) => (
+                  <button
+                    key={dotIndex}
+                    type="button"
+                    role="tab"
+                    aria-selected={dotIndex === activePerspective}
+                    aria-label={`Perspectiva ${dotIndex + 1}`}
+                    className={`perspective-dot ${dotIndex === activePerspective ? 'active' : ''}`}
+                    onClick={() => setPerspectiveIndex(dotIndex)}
+                  />
+                ))}
+              </div>
+            ) : (
+              <span />
+            )}
+            <button type="button" className="detail-pager-btn" onClick={() => moveAmongVisible(1)}>
+              Siguiente
+            </button>
+          </div>
         </div>
 
         <div className="card">
@@ -330,7 +360,7 @@ export function DetailView({
           </div>
 
           <div className="note">
-            Atajos: <b>A</b> aprobar · <b>D</b> eliminar recorte (quita la vista actual; si es la única, elimina el recorte) · <b>Ctrl+Z</b> deshacer · <b>← →</b> navegar.
+            Atajos: <b>A</b> aprobar · <b>D</b> eliminar recorte (quita la vista actual; si es la única, elimina el recorte) · <b>Ctrl+Z</b> deshacer · <b>← →</b> cambiar de vista.
           </div>
         </div>
       </div>

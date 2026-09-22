@@ -38,6 +38,7 @@ function App() {
   const [view, setView] = useState<ValidationView>('panel')
   const [mosaicReady, setMosaicReady] = useState(false)
   const mosaicUiRef = useRef<MosaicUiState | null>(null)
+  const [detailNavIds, setDetailNavIds] = useState<string[] | null>(null)
   const [darkMode, setDarkMode] = useState(() => {
     const saved = localStorage.getItem('len-dashboard-theme')
     return saved ? saved === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches
@@ -50,6 +51,7 @@ function App() {
 
   useEffect(() => {
     mosaicUiRef.current = null
+    setDetailNavIds(null)
     setMosaicReady(false)
   }, [store.eventId])
 
@@ -169,7 +171,8 @@ function App() {
               onHideCrops={(ids) => store.hideCrops(ids)}
               onCorrectBrand={(ids, brand) => store.correctBrand(ids, brand)}
               onCorrectModel={(ids, brand, model) => store.correctModel(ids, brand, model)}
-              onOpenDetail={(index) => {
+              onOpenDetail={(index, navigationIds) => {
+                setDetailNavIds(navigationIds)
                 store.setDetailIndex(index)
                 navigate('detail', { preserveScroll: true })
               }}
@@ -188,6 +191,7 @@ function App() {
             records={store.records}
             index={store.detailIndex}
             displayCatalog={store.displayCatalog}
+            navigationIds={detailNavIds}
             onIndexChange={store.setDetailIndex}
             onBackToMosaic={goToMosaic}
             onApprove={(id) => store.approveRecords([id], 'individual')}

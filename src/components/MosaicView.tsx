@@ -20,7 +20,7 @@ interface MosaicViewProps {
   onHideCrops: (ids: string[]) => void
   onCorrectBrand: (ids: string[], brand: string) => void
   onCorrectModel: (ids: string[], brand: string, model: string) => void
-  onOpenDetail: (index: number) => void
+  onOpenDetail: (index: number, navigationIds: string[]) => void
   bootstrapUi?: MosaicUiState | null
   remoteSaveEnabled?: boolean
   sessionDirty?: boolean
@@ -349,7 +349,9 @@ export function MosaicView({
   const openDetail = useCallback((personId: string) => {
     persistRef.current({ ...snapshotRef.current(), scrollY: window.scrollY })
     const index = recordsRef.current.findIndex((record) => record.personId === personId)
-    if (index >= 0) onOpenDetailRef.current(index)
+    if (index >= 0) {
+      onOpenDetailRef.current(index, visibleRef.current.map((item) => item.personId))
+    }
   }, [])
 
   const handleUndoRef = useRef(handleUndo)
