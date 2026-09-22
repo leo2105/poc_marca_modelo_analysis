@@ -195,6 +195,7 @@ function App() {
             onIndexChange={store.setDetailIndex}
             onBackToMosaic={goToMosaic}
             onApprove={(id) => store.approveRecords([id], 'individual')}
+            onHideShoe={(id) => store.hideCrops([id])}
             onRemovePerspective={(id, slotIndex, remaining) =>
               store.removePerspective(id, slotIndex, remaining, 'individual')
             }

@@ -380,7 +380,7 @@ export function MosaicView({
       const ids = [...current]
       const key = event.key.toLowerCase()
       if (key === 'a') runDecisionRef.current(onApproveRef.current, ids)
-      if (key === 'r' || key === 'd') runDecisionRef.current(onHideCropsRef.current, ids)
+      if (key === 'e' || key === 'r') runDecisionRef.current(onHideCropsRef.current, ids)
       if (event.key === 'Escape') commitSelectionRef.current(new Set())
     }
     window.addEventListener('keydown', onKeyDown)
@@ -526,7 +526,7 @@ export function MosaicView({
             )}
           </div>
         </div>
-        <button className="vbtn" disabled={!selected.size} onClick={() => runDecision(onHideCrops)} title="Elimina las zapatillas seleccionadas del mosaico y del dashboard">⌀ Eliminar zapatilla <kbd>D</kbd></button>
+        <button className="vbtn" disabled={!selected.size} onClick={() => runDecision(onHideCrops)} title="Elimina las zapatillas seleccionadas del mosaico y del dashboard">⌀ Eliminar zapatilla <kbd>E</kbd></button>
         <button className="vbtn" disabled={!selected.size} onClick={() => commitSelection(new Set())}>Limpiar selección</button>
         {remoteSaveEnabled && (
           <>

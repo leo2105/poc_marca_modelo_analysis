@@ -15,6 +15,7 @@ interface DetailViewProps {
   onIndexChange: (index: number) => void
   onBackToMosaic: () => void
   onApprove: (id: string) => void
+  onHideShoe: (id: string) => void
   onRemovePerspective: (id: string, slotIndex: number, remainingVisibleAfterRemove: number) => void
   onUndo: () => void
   canUndo: boolean
@@ -38,6 +39,7 @@ export function DetailView({
   onIndexChange,
   onBackToMosaic,
   onApprove,
+  onHideShoe,
   onRemovePerspective,
   onUndo,
   canUndo,
@@ -156,13 +158,17 @@ export function DetailView({
         onApprove(record.personId)
         moveAmongVisible(1)
       }
+      if (key === 'e') {
+        onHideShoe(record.personId)
+        moveAmongVisible(1)
+      }
       if (key === 'd' || key === 'r') handleRemovePerspective()
       if (event.key === 'ArrowRight') cyclePerspective(1)
       if (event.key === 'ArrowLeft') cyclePerspective(-1)
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [canUndo, classification, cyclePerspective, handleRemovePerspective, moveAmongVisible, onApprove, onUndo, record])
+  }, [canUndo, classification, cyclePerspective, handleRemovePerspective, moveAmongVisible, onApprove, onHideShoe, onUndo, record])
 
   if (!record || !classification) {
     return <section className="view active"><div className="empty-state">No hay recortes para revisar.</div></section>
@@ -331,7 +337,10 @@ export function DetailView({
           )}
 
           <div className="dactions">
-            <button className="vbtn ok" disabled={pendingModel} onClick={() => { onApprove(record.personId); moveAmongVisible(1) }}>✓ Aprobar clasificación <kbd>A</kbd></button>
+            <div className="detail-primary-actions">
+              <button className="vbtn ok" disabled={pendingModel} onClick={() => { onApprove(record.personId); moveAmongVisible(1) }}>✓ Aprobar clasificación <kbd>A</kbd></button>
+              <button className="vbtn no" onClick={() => { onHideShoe(record.personId); moveAmongVisible(1) }}>⌀ Eliminar zapatilla <kbd>E</kbd></button>
+            </div>
             <div className={`menu full ${brandMenuOpen ? 'open' : ''}`}>
               <button className="vbtn dark full" onClick={() => { setBrandMenuOpen((v) => !v); setBrandQuery(''); setModelMenuOpen(false) }}>↺ Corregir marca ▾</button>
               {brandMenuOpen && <div className="menu-pop left catalog-menu">
@@ -402,7 +411,7 @@ export function DetailView({
           </div>
 
           <div className="note">
-            Atajos: <b>A</b> aprobar · <b>D</b> eliminar recorte (quita la vista actual; si es la única, elimina el recorte) · <b>Ctrl+Z</b> deshacer · <b>← →</b> cambiar de vista.
+            Atajos: <b>A</b> aprobar · <b>E</b> eliminar zapatilla · <b>D</b> eliminar recorte (quita la vista actual; si es la única, elimina el recorte) · <b>Ctrl+Z</b> deshacer · <b>← →</b> cambiar de vista.
           </div>
         </div>
       </div>
