@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import catalogData from '../../marcas-modelos-lista.json'
 import { deleteValidationSession, fetchValidationSession, isRemoteSessionEnabled, putValidationSession } from '../api/validationSession'
+import { canPublish, sessionActorEmail, sessionOwnerId } from '../auth/roles'
 import { readStoredEventId, setActiveEventId, storeEventId } from '../data/activeRace'
 import { createRecordsForRace } from '../data/demoData'
 import { HOMENAJE_ASSETS, loadRaceAssets, type RaceAssets } from '../data/raceAssets'
@@ -31,11 +32,15 @@ interface StorageMeta {
 }
 
 function storageKey(eventId: string) {
-  return storageKeyForEvent(eventId)
+  const owner = sessionOwnerId()
+  const base = storageKeyForEvent(eventId)
+  return owner ? `${base}--${owner}` : base
 }
 
 function storageMetaKey(eventId: string) {
-  return storageMetaKeyForEvent(eventId)
+  const owner = sessionOwnerId()
+  const base = storageMetaKeyForEvent(eventId)
+  return owner ? `${base}--${owner}` : base
 }
 
 function readStorageMeta(eventId: string): StorageMeta | null {
@@ -70,6 +75,14 @@ function purgeObsoleteStorage() {
       localStorage.removeItem(key)
     }
   }
+}
+
+function ownPublished(value: boolean) {
+  return canPublish() ? value : false
+}
+
+function decisionActor(race: RaceDefinition) {
+  return sessionActorEmail() || race.actor
 }
 
 function isStoredSessionValid(parsed: ValidationRecord[], race: RaceDefinition, assets: RaceAssets): boolean {
@@ -204,7 +217,7 @@ function loadLocalSession(
       return {
         records: applied.records,
         catalog: mergeCatalogs(BASE_CATALOG, applied.catalog),
-        published: applied.published,
+        published: ownPublished(applied.published),
         detailIndex: applied.detailIndex,
       }
     }
@@ -287,7 +300,8 @@ export function useValidationStore() {
   }, [])
 
   const setPublished = useCallback((value: boolean) => {
-    setPublishedState(value)
+    if (value && !canPublish()) return
+    setPublishedState(ownPublished(value))
     markSessionDirty()
   }, [markSessionDirty])
 
@@ -352,7 +366,7 @@ export function useValidationStore() {
     markSessionDirty()
     const idSet = new Set(ids)
     const decidedAt = new Date().toISOString()
-    const actor = raceRef.current.actor
+    const actor = decisionActor(raceRef.current)
     setRecords((current) =>
       syncRecords(
         current.map((record) => {
@@ -395,7 +409,7 @@ export function useValidationStore() {
     markSessionDirty()
     const idSet = new Set(ids)
     const decidedAt = new Date().toISOString()
-    const actor = raceRef.current.actor
+    const actor = decisionActor(raceRef.current)
     setRecords((current) =>
       current.map((record) => {
         if (!idSet.has(record.personId)) return record
@@ -428,7 +442,7 @@ export function useValidationStore() {
     markSessionDirty()
     const decidedAt = new Date().toISOString()
     const hideAll = remainingVisibleAfterRemove <= 0
-    const actor = raceRef.current.actor
+    const actor = decisionActor(raceRef.current)
     setRecords((current) =>
       current.map((record) => {
         if (record.personId !== personId) return record
@@ -456,7 +470,7 @@ export function useValidationStore() {
     setCatalog(nextCatalog)
     const nextDisplayCatalog = buildDisplayCatalog(nextCatalog)
     const idSet = new Set(ids)
-    const actor = raceRef.current.actor
+    const actor = decisionActor(raceRef.current)
     setRecords((current) =>
       syncRecords(
         current.map((record) => {
@@ -525,7 +539,7 @@ export function useValidationStore() {
       const nextCatalog = mergeCatalogs(BASE_CATALOG, applied.catalog)
       setCatalog(nextCatalog)
       setRecords(syncRecords(applied.records, buildDisplayCatalog(nextCatalog)))
-      setPublishedState(applied.published)
+      setPublishedState(ownPublished(applied.published))
       setDetailIndex(applied.detailIndex)
       setLoadedMosaicUi(applied.ui)
       setSessionDirty(false)
@@ -603,9 +617,10 @@ export function useValidationStore() {
     }
   }
 
-  const saveRemoteSession = useCallback(async (ui: MosaicUiState | null) => {
+  const saveRemoteSession = useCallback(async (ui: MosaicUiState | null, publishedOverride?: boolean) => {
     if (!remoteSessionEnabled) return
     const currentRace = raceRef.current
+    const nextPublished = ownPublished(publishedOverride ?? published)
     setSessionSaveState('saving')
     setSessionSaveError(null)
     try {
@@ -613,12 +628,13 @@ export function useValidationStore() {
         records,
         catalog,
         ui,
-        published,
+        published: nextPublished,
         detailIndex,
         race: currentRace,
         baseline: baselineRef.current,
       })
       await putValidationSession(currentRace.eventId, snapshot)
+      setPublishedState(nextPublished)
       setSessionDirty(false)
       setSessionSaveState('saved')
     } catch (err) {
@@ -627,6 +643,22 @@ export function useValidationStore() {
       throw err
     }
   }, [catalog, detailIndex, published, records, remoteSessionEnabled])
+
+  const publishSession = useCallback(async (value: boolean, ui: MosaicUiState | null) => {
+    if (!canPublish()) throw new Error('Solo un administrador puede publicar')
+    const previous = published
+    setPublishedState(value)
+    if (!remoteSessionEnabled) {
+      markSessionDirty()
+      return
+    }
+    try {
+      await saveRemoteSession(ui, value)
+    } catch (err) {
+      setPublishedState(previous)
+      throw err
+    }
+  }, [markSessionDirty, published, remoteSessionEnabled, saveRemoteSession])
 
   const exportValidationJson = () => {
     void downloadValidationJson({
@@ -646,6 +678,7 @@ export function useValidationStore() {
     displayCatalog,
     published,
     setPublished,
+    publishSession,
     summary,
     detailIndex,
     setDetailIndex: setDetailIndexTracked,

@@ -5,6 +5,17 @@ function readApiBaseUrl(): string {
   return (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim().replace(/\/$/, '') ?? ''
 }
 
+export async function readApiError(response: Response, fallback: string): Promise<string> {
+  const text = await response.text()
+  try {
+    const parsed = JSON.parse(text) as { error?: string }
+    if (parsed.error) return parsed.error
+  } catch {
+    /* cuerpo que no es JSON */
+  }
+  return text || fallback
+}
+
 function wrapNetworkError(err: unknown): Error {
   if (err instanceof TypeError) {
     return new Error('No se pudo conectar con el servidor. Revisa la red o vuelve a intentar.')
@@ -32,8 +43,7 @@ export async function fetchValidationSession(eventId: string): Promise<Validatio
 
     if (response.status === 404 || response.status === 304) return null
     if (!response.ok) {
-      const text = await response.text()
-      throw new Error(text || `Error ${response.status} al cargar sesión`)
+      throw new Error(await readApiError(response, `Error ${response.status} al cargar sesión`))
     }
 
     return (await response.json()) as ValidationSessionSnapshot
@@ -59,8 +69,7 @@ export async function putValidationSession(eventId: string, snapshot: Validation
     })
 
     if (!response.ok) {
-      const text = await response.text()
-      throw new Error(text || `Error ${response.status} al guardar`)
+      throw new Error(await readApiError(response, `Error ${response.status} al guardar`))
     }
   } catch (err) {
     throw wrapNetworkError(err)
@@ -79,9 +88,31 @@ export async function deleteValidationSession(eventId: string): Promise<void> {
     })
 
     if (!response.ok && response.status !== 404) {
-      const text = await response.text()
-      throw new Error(text || `Error ${response.status} al borrar sesión`)
+      throw new Error(await readApiError(response, `Error ${response.status} al borrar sesión`))
     }
+  } catch (err) {
+    throw wrapNetworkError(err)
+  }
+}
+
+export async function fetchCanonicalPublished(eventId: string): Promise<boolean> {
+  const base = readApiBaseUrl()
+  if (!base) return false
+
+  try {
+    const response = await fetch(`${base}/sessions/${encodeURIComponent(eventId)}/canonical`, {
+      cache: 'no-store',
+      headers: {
+        ...authRequestHeaders(),
+        Accept: 'application/json',
+      },
+    })
+    if (response.status === 404) return false
+    if (!response.ok) {
+      throw new Error(await readApiError(response, `Error ${response.status} al consultar la publicación`))
+    }
+    const snapshot = (await response.json()) as ValidationSessionSnapshot
+    return snapshot.published === true
   } catch (err) {
     throw wrapNetworkError(err)
   }

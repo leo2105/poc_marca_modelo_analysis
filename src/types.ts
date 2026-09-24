@@ -2,7 +2,7 @@ export type Catalog = Record<string, string[]>
 
 export type ValidationState = 'pending' | 'approved' | 'corrected' | 'rejected' | 'discarded'
 
-export type ValidationView = 'panel' | 'mosaic' | 'detail' | 'publish'
+export type ValidationView = 'panel' | 'mosaic' | 'detail' | 'publish' | 'accounts'
 
 export interface MosaicUiState {
   brandFilter: string

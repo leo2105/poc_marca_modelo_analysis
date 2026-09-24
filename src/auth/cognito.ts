@@ -120,7 +120,7 @@ export function authRequestHeaders(): HeadersInit {
   return token ? { Authorization: `Bearer ${token}` } : {}
 }
 
-function decodeJwtPayload(token: string): Record<string, unknown> {
+export function decodeJwtPayload(token: string): Record<string, unknown> {
   const payload = token.split('.')[1]
   const padded = payload + '='.repeat((4 - (payload.length % 4)) % 4)
   return JSON.parse(atob(padded.replace(/-/g, '+').replace(/_/g, '/')))

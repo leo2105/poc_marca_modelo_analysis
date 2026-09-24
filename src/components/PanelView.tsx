@@ -13,10 +13,9 @@ interface PanelViewProps {
   darkMode: boolean
   onDarkModeChange: (value: boolean) => void
   onStartValidation: () => void
-  onResetSession: () => void
 }
 
-export function PanelView({ summary, records, displayCatalog, race, spriteCount, darkMode, onDarkModeChange, onStartValidation, onResetSession }: PanelViewProps) {
+export function PanelView({ summary, records, displayCatalog, race, spriteCount, darkMode, onDarkModeChange, onStartValidation }: PanelViewProps) {
   const resolved = summary.total - summary.pending
   const pct = summary.total ? Math.round((resolved / summary.total) * 100) : 0
 
@@ -67,17 +66,6 @@ export function PanelView({ summary, records, displayCatalog, race, spriteCount,
         <h2>Panel de corrida <span className="admin-tag">ADMIN</span></h2>
         <div className="top-actions">
           <ThemeToggle darkMode={darkMode} onChange={onDarkModeChange} />
-          <button
-            type="button"
-            className="btn-ghost"
-            onClick={() => {
-              if (window.confirm('¿Reiniciar toda la validación? Se perderán aprobaciones, correcciones y descartes guardados en este navegador.')) {
-                onResetSession()
-              }
-            }}
-          >
-            Reiniciar validación
-          </button>
           <button className="btn-dark" onClick={onStartValidation}>COMENZAR VALIDACIÓN →</button>
         </div>
       </div>

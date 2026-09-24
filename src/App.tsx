@@ -1,6 +1,8 @@
 import { Component, useCallback, useEffect, useRef, useState } from 'react'
 import type { ErrorInfo, ReactNode } from 'react'
 import { useAuth } from './auth/AuthGate'
+import { canPublish } from './auth/roles'
+import { AccountsView } from './components/AccountsView'
 import { DetailView } from './components/DetailView'
 import { MosaicView } from './components/MosaicView'
 import { PanelView } from './components/PanelView'
@@ -35,6 +37,8 @@ export class AppErrorBoundary extends Component<{ children: ReactNode }, { error
 function App() {
   const store = useValidationStore()
   const auth = useAuth()
+  const allowPublish = canPublish()
+  const canManageAccounts = allowPublish
   const [view, setView] = useState<ValidationView>('panel')
   const [mosaicReady, setMosaicReady] = useState(false)
   const mosaicUiRef = useRef<MosaicUiState | null>(null)
@@ -130,6 +134,7 @@ function App() {
         raceLoading={store.raceLoading}
         onSelectEvent={(eventId) => { void store.selectEvent(eventId) }}
         onNavigate={handleSidebarNavigate}
+        canManageAccounts={canManageAccounts}
       />
       <main className="main">
         {store.raceError && (
@@ -152,7 +157,6 @@ function App() {
             darkMode={darkMode}
             onDarkModeChange={setDarkMode}
             onStartValidation={() => navigate('mosaic')}
-            onResetSession={store.resetSession}
           />
         )}
         {(view === 'mosaic' || mosaicReady) && !store.raceLoading && (
@@ -209,13 +213,25 @@ function App() {
           <PublishView
             summary={store.summary}
             published={store.published}
+            canPublish={allowPublish}
+            eventId={store.eventId}
             onExportJson={store.exportValidationJson}
-            onPublish={() => {
-              store.setPublished(true)
-              window.alert('Corrida publicada. La reportería aprobada ya está disponible en el dashboard del cliente.')
+            onPublish={async (value) => {
+              try {
+                await store.publishSession(value, mosaicUiRef.current)
+                window.alert(
+                  value
+                    ? 'Corrida publicada. La reportería aprobada ya está disponible en el dashboard del cliente.'
+                    : 'La corrida dejó de mostrarse en el dashboard del cliente.',
+                )
+              } catch (err) {
+                window.alert(err instanceof Error ? err.message : 'No se pudo publicar')
+                throw err
+              }
             }}
           />
         )}
+        {view === 'accounts' && canManageAccounts && <AccountsView />}
         </AppErrorBoundary>
       </main>
     </div>

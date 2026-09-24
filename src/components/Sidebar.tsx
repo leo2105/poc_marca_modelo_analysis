@@ -2,6 +2,7 @@ import type { ValidationView } from '../types'
 import type { RaceDefinition } from '../data/races'
 import { useAuth } from '../auth/AuthGate'
 import { getCognitoConfig } from '../auth/cognito'
+import { getAccountRole, roleLabel } from '../auth/roles'
 import { RaceSelect } from './RaceSelect'
 
 interface SidebarProps {
@@ -12,6 +13,7 @@ interface SidebarProps {
   raceLoading?: boolean
   onSelectEvent: (eventId: string) => void
   onNavigate: (view: ValidationView) => void
+  canManageAccounts?: boolean
 }
 
 export function Sidebar({
@@ -22,6 +24,7 @@ export function Sidebar({
   raceLoading = false,
   onSelectEvent,
   onNavigate,
+  canManageAccounts = false,
 }: SidebarProps) {
   const auth = useAuth()
   const cognitoEnabled = getCognitoConfig().enabled
@@ -61,15 +64,30 @@ export function Sidebar({
           <svg viewBox="0 0 24 24"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" /></svg>
           Publicación
         </button>
+        {canManageAccounts && (
+          <button className={activeView === 'accounts' ? 'active' : ''} onClick={() => onNavigate('accounts')}>
+            <svg viewBox="0 0 24 24"><path d="M12 3l7 3v6c0 4.2-2.8 7.4-7 9-4.2-1.6-7-4.8-7-9V6l7-3z" /><path d="M9 12l2 2 4-4" /></svg>
+            Permisos y roles
+          </button>
+        )}
       </nav>
       <div className="side-foot">
         <div className="who">
           <div className="avatar">{email ? email.slice(0, 2).toUpperCase() : 'OP'}</div>
           <div>
             <b>{email ?? 'LEN Ops'}</b>
-            <small>{cognitoEnabled ? 'Sesión Cognito' : 'Cuenta administrativa'}</small>
+            <small>{cognitoEnabled ? roleLabel(getAccountRole()) : 'Cuenta administrativa'}</small>
           </div>
         </div>
+        {canManageAccounts && (
+          <button
+            type="button"
+            className={activeView === 'accounts' ? 'accounts-btn active' : 'accounts-btn'}
+            onClick={() => onNavigate('accounts')}
+          >
+            Permisos y roles
+          </button>
+        )}
         {cognitoEnabled && auth && (
           <button type="button" className="logout-btn" onClick={() => auth.logout()}>
             Cerrar sesión

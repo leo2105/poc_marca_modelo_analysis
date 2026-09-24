@@ -248,6 +248,17 @@ Resources:
                   - dynamodb:PutItem
                   - dynamodb:DeleteItem
                 Resource: !GetAtt ValidationSessionsTable.Arn
+              - Effect: Allow
+                Action:
+                  - cognito-idp:AdminCreateUser
+                  - cognito-idp:AdminAddUserToGroup
+                  - cognito-idp:AdminRemoveUserFromGroup
+                  - cognito-idp:AdminDisableUser
+                  - cognito-idp:AdminEnableUser
+                  - cognito-idp:AdminListGroupsForUser
+                  - cognito-idp:ListUsers
+                  - cognito-idp:AdminGetUser
+                Resource: !GetAtt UserPool.Arn
 
   ValidationApiFunction:
     Type: AWS::Lambda::Function
@@ -256,11 +267,13 @@ Resources:
       Runtime: nodejs20.x
       Handler: index.handler
       Role: !GetAtt ValidationApiRole.Arn
-      Timeout: 10
-      MemorySize: 128
+      Timeout: 30
+      MemorySize: 256
       Environment:
         Variables:
           TABLE_NAME: !Ref ValidationSessionsTable
+          USER_POOL_ID: !Ref UserPool
+          BOOTSTRAP_ADMINS: lleonv@uni.pe
       Code:
         ZipFile: |
           exports.handler = async () => ({
@@ -285,6 +298,8 @@ Resources:
         AllowMethods:
           - GET
           - PUT
+          - POST
+          - PATCH
           - DELETE
           - OPTIONS
         AllowHeaders:
@@ -348,6 +363,33 @@ Resources:
     Properties:
       ApiId: !Ref ValidationHttpApi
       RouteKey: DELETE /sessions/{eventId}
+      AuthorizationType: JWT
+      AuthorizerId: !Ref ValidationApiAuthorizer
+      Target: !Sub 'integrations/${ValidationApiIntegration}'
+
+  ValidationApiRouteListUsers:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ValidationHttpApi
+      RouteKey: GET /admin/users
+      AuthorizationType: JWT
+      AuthorizerId: !Ref ValidationApiAuthorizer
+      Target: !Sub 'integrations/${ValidationApiIntegration}'
+
+  ValidationApiRouteCreateUser:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ValidationHttpApi
+      RouteKey: POST /admin/users
+      AuthorizationType: JWT
+      AuthorizerId: !Ref ValidationApiAuthorizer
+      Target: !Sub 'integrations/${ValidationApiIntegration}'
+
+  ValidationApiRouteUpdateUser:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ValidationHttpApi
+      RouteKey: PATCH /admin/users/{username}
       AuthorizationType: JWT
       AuthorizerId: !Ref ValidationApiAuthorizer
       Target: !Sub 'integrations/${ValidationApiIntegration}'

@@ -15,25 +15,34 @@ fi
 STACK_NAME="${STACK_NAME:-len-validation}"
 AWS_REGION="${AWS_REGION:-us-east-1}"
 FN_NAME="${STACK_NAME}-validation-api"
-WORKDIR="$ROOT/infra/validation-api/dist"
-ZIP="$ROOT/infra/validation-api/validation-api.zip"
+SRC="$ROOT/infra/validation-api"
+WORKDIR="$SRC/dist"
+ZIP="$SRC/validation-api.zip"
 
 rm -rf "$WORKDIR" "$ZIP"
 mkdir -p "$WORKDIR"
-cp "$ROOT/infra/validation-api/index.mjs" "$WORKDIR/index.mjs"
+cp "$SRC/index.mjs" "$SRC/package.json" "$WORKDIR/"
 
-(
-  cd "$WORKDIR"
-  if command -v zip >/dev/null; then
-    zip -q "$ZIP" index.mjs
-  else
-    python3 - <<'PY'
+echo "→ npm install (validation-api)"
+npm install --omit=dev --prefix "$WORKDIR"
+
+python3 - <<PY
+import os
 import zipfile
-with zipfile.ZipFile("../validation-api.zip", "w", zipfile.ZIP_DEFLATED) as zf:
-    zf.write("index.mjs")
+root = r"$WORKDIR"
+zip_path = r"$ZIP"
+with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+    for dirpath, dirnames, filenames in os.walk(root):
+        for filename in filenames:
+            full = os.path.join(dirpath, filename)
+            arc = os.path.relpath(full, root).replace(os.sep, "/")
+            if arc.startswith("node_modules/.bin/"):
+                continue
+            zf.write(full, arc)
+print(f"zip {os.path.getsize(zip_path)} bytes")
 PY
-  fi
-)
+
+rm -rf "$WORKDIR"
 
 if ! aws lambda get-function --function-name "$FN_NAME" --region "$AWS_REGION" >/dev/null 2>&1; then
   echo "⚠ Lambda $FN_NAME no existe — créala con CloudFormation (npm run deploy)"
